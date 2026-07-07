@@ -1,4 +1,6 @@
+﻿from collections import Counter
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import numpy as np
@@ -230,14 +232,18 @@ def test_presentation_window_exposes_source_controls(qtbot, tmp_path: Path) -> N
     qtbot.addWidget(window)
 
     assert window.source_mode.count() == 3
-    assert window.start_button.text() == "Iniciar analise"
+    assert window.start_button.text() == "Iniciar"
     assert window.stop_button.isEnabled() is False
     assert window.force_cpu_checkbox.isChecked() is False
     assert window.person_crop_checkbox.isChecked() is True
     assert window.model_value.text()
+    assert window.model_value.isVisible() is False
     assert window.person_model_value.text()
-    assert window.video.minimumWidth() == 900
-    assert window.video.minimumHeight() == 500
+    assert window.person_model_value.isVisible() is False
+    assert window.person_crop_checkbox.isVisible() is False
+    assert window.weak_child_checkbox.isVisible() is False
+    assert window.video.minimumWidth() == 720
+    assert window.video.minimumHeight() == 420
     assert window.weak_child_checkbox.isChecked() is True
     assert window.collect_dataset_checkbox.isChecked() is False
 
@@ -304,3 +310,69 @@ def test_dataset_collector_writes_review_manifest(tmp_path: Path) -> None:
     assert '"predicted_role": "child"' in record
     assert '"human_label": null' in record
     assert '"training_eligible": false' in record
+
+
+def test_event_evidence_writes_frame_metadata_and_session_summary(tmp_path: Path) -> None:
+    demo = PediatriaPopupDemo.__new__(PediatriaPopupDemo)
+    demo.session_id = "20260707_120000"
+    demo.evidence_dir = tmp_path / "evidence" / "sessions" / demo.session_id
+    demo.events_log_path = demo.evidence_dir / "events.jsonl"
+    demo.frame_index = 42
+    demo.requested_device = "auto"
+    demo.device = "cpu"
+    demo.device_reason = "test"
+    demo.model_path = Path("src/models/pediatria_child_detector_v6_jutta_openvino_model")
+    demo.person_model_path = Path("src/models/yolo11n_openvino_model")
+    demo.dataset_collector = None
+    demo.session_event_counts = Counter()
+    demo.session_status_counts = Counter()
+    demo.session_suppression_counts = Counter()
+    demo.session_evidence_error_counts = Counter()
+    demo.session_person_detector_zero = 0
+    demo.states = Counter({"UNCERTAIN": 1})
+    demo.latencies = [10.0]
+    demo.popup_count = 0
+    demo.current_source = "camera_teste"
+
+    state = SimpleNamespace(
+        raw_state="UNCERTAIN",
+        stable_state="UNCERTAIN",
+        reason="Sem evidencia infantil ou adulta suficiente.",
+        children=[],
+    )
+    frame = np.zeros((80, 120, 3), dtype=np.uint8)
+
+    evidence_paths, evidence_errors = demo._save_event_evidence(
+        event_type="frame_diagnostic",
+        source_name="camera_teste",
+        state=state,
+        child=None,
+        detections=[],
+        person_detections=[],
+        clean_frame=frame,
+        popup_emitido=False,
+        suppression_reason=None,
+    )
+    demo._append_event_log(
+        "frame_diagnostic",
+        source_name="camera_teste",
+        state=state,
+        child=None,
+        detections=[],
+        person_detections=[],
+        evidence_paths=evidence_paths,
+        evidence_errors=evidence_errors,
+    )
+    summary = demo._build_session_summary()
+    demo._write_session_summary_files(summary)
+
+    assert Path(evidence_paths["frame"]).is_file()
+    assert Path(evidence_paths["annotated"]).is_file()
+    assert Path(evidence_paths["metadata"]).is_file()
+    assert "crop" not in evidence_paths
+    assert "crop:no_detection" in evidence_errors
+    assert summary["total_sem_pessoa"] == 1
+    assert summary["total_person_detector_zero"] == 1
+    assert (demo.evidence_dir / "session_summary.json").is_file()
+    assert (demo.evidence_dir / "session_summary.csv").is_file()
+

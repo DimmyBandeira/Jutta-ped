@@ -1,20 +1,22 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
+import csv
 import colorsys
 import json
 import os
 import sys
+import threading
 import time
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlsplit, urlunsplit
 
 import cv2
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
@@ -63,6 +65,11 @@ from modulo.pediatria.detector_mvp import (
 )
 from modulo.pediatria.mvp_popup import AlertEventLatch, PediatriaAlertPopup
 from modulo.pediatria.mvp_voice import MvpVoiceAnnouncer
+from src.jutta_ped.service import launcher as service_launcher
+from src.jutta_ped.service.pediatria_service import (
+    PediatriaService,
+    PediatriaServiceConfig,
+)
 
 SOURCE_FILE = "Arquivo de video"
 SOURCE_URL = "URL de camera"
@@ -297,6 +304,92 @@ def crop_frame(
         return None
     crop = frame[y1:y2, x1:x2]
     return crop.copy() if crop.size else None
+
+
+def normalize_bbox_for_image(
+    frame: Any,
+    bbox_xyxy: tuple[float, float, float, float] | list[float] | None,
+) -> tuple[int, int, int, int] | None:
+    if frame is None or bbox_xyxy is None:
+        return None
+    if not hasattr(frame, "shape") or len(frame.shape) < 2:
+        return None
+    frame_h, frame_w = frame.shape[:2]
+    if frame_h <= 0 or frame_w <= 0:
+        return None
+    try:
+        x1, y1, x2, y2 = map(int, bbox_xyxy)
+    except (TypeError, ValueError):
+        return None
+    x1, y1 = max(0, x1), max(0, y1)
+    x2, y2 = min(frame_w - 1, x2), min(frame_h - 1, y2)
+    if x2 <= x1 or y2 <= y1:
+        return None
+    return x1, y1, x2, y2
+
+
+def draw_event_evidence_frame(
+    frame: Any,
+    detections: list[PediatricDetection],
+    selected: PediatricDetection | None = None,
+) -> Any:
+    canvas = frame.copy()
+    selected_track = selected.track_id if selected is not None else None
+    for item in detections:
+        bbox = normalize_bbox_for_image(canvas, item.bbox_xyxy)
+        if bbox is None:
+            continue
+        x1, y1, x2, y2 = bbox
+        if item.track_id == selected_track:
+            color = (0, 80, 255)
+            thickness = 4
+        elif item.role == "child":
+            color = (0, 165, 255)
+            thickness = 3
+        elif item.role == "adult":
+            color = (80, 180, 80)
+            thickness = 2
+        else:
+            color = (180, 180, 180)
+            thickness = 2
+        cv2.rectangle(canvas, (x1, y1), (x2, y2), color, thickness)
+        label = f"{item.role}:{item.confidence:.2f} id={item.track_id}"
+        cv2.putText(
+            canvas,
+            label,
+            (x1, max(18, y1 - 8)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            color,
+            2,
+            getattr(cv2, "LINE_AA", 16),
+        )
+    return canvas
+
+
+def choose_event_crop_detection(
+    child: PediatricDetection | None,
+    detections: list[PediatricDetection],
+    person_detections: list[PediatricDetection],
+) -> PediatricDetection | None:
+    if child is not None:
+        return child
+    if detections:
+        return max(detections, key=lambda item: (item.role == "child", item.confidence))
+    if person_detections:
+        return max(person_detections, key=lambda item: item.confidence)
+    return None
+
+
+def serialize_detection(item: PediatricDetection | None) -> dict[str, Any] | None:
+    if item is None:
+        return None
+    return {
+        "track_id": item.track_id,
+        "role": item.role,
+        "confidence": item.confidence,
+        "bbox_xyxy": list(item.bbox_xyxy),
+    }
 
 
 @dataclass
@@ -1156,6 +1249,8 @@ class PediatriaDatasetCollector:
 class PediatriaPopupDemo(QMainWindow):
     """Interface local de apresentacao. Nao chama servicos do WebGuardiao."""
 
+    _service_check_done = pyqtSignal(object, bool)
+
     def __init__(
         self,
         *,
@@ -1205,6 +1300,7 @@ class PediatriaPopupDemo(QMainWindow):
         self.performance_profile: dict[str, int | float | str] = {}
         self.runner: PediatricsDetectorMvpRunner | None = None
         self.crop_pipeline: PersonCropSpecialistPipeline | None = None
+        self.service: PediatriaService | None = None
         self._loaded_specialist_model_path: Path | None = None
         self._loaded_person_model_path: Path | None = None
         self.capture: Any | None = None
@@ -1224,12 +1320,30 @@ class PediatriaPopupDemo(QMainWindow):
         self._resolved_frames_by_camera: Counter[str] = Counter()
         self._last_suppressed_log: dict[tuple[str, int, str], float] = {}
         self.session_started_at = datetime.now()
+        self.session_id = self.session_started_at.strftime("%Y%m%d_%H%M%S")
         self.evidence_dir = self._make_session_evidence_dir()
         self.events_log_path = self.evidence_dir / "events.jsonl"
+        self.session_event_counts: Counter[str] = Counter()
+        self.session_status_counts: Counter[str] = Counter()
+        self.session_suppression_counts: Counter[str] = Counter()
+        self.session_evidence_error_counts: Counter[str] = Counter()
+        self.session_person_detector_zero = 0
         self.voice = MvpVoiceAnnouncer(
             enabled=voice_enabled,
             repeat_interval_seconds=voice_repeat_seconds,
         )
+        self._service_process: Any | None = None
+        self._service_start_attempts = 0
+        # Timers filhos de `self`: o Qt os cancela automaticamente quando a
+        # janela e destruida, evitando callback em widget ja deletado.
+        self._service_startup_timer = QTimer(self)
+        self._service_startup_timer.setSingleShot(True)
+        self._service_startup_timer.timeout.connect(self._auto_check_service_on_startup)
+        self._service_poll_timer = QTimer(self)
+        self._service_poll_timer.setSingleShot(True)
+        self._service_poll_timer.timeout.connect(self._poll_service_startup)
+        self._service_check_done.connect(lambda callback, running: callback(running))
+
         self._build_ui(initial_source)
 
         self.timer = QTimer(self)
@@ -1237,139 +1351,120 @@ class PediatriaPopupDemo(QMainWindow):
         self.setWindowTitle("Pediatria Local - apresentacao")
         self.resize(1280, 760)
 
+        self._service_startup_timer.start(200)
+
     def _make_session_evidence_dir(self) -> Path:
-        stamp = self.session_started_at.strftime("%Y%m%d_%H%M%S")
-        return self.report_path.parent / f"evidencias_{stamp}"
+        return self.report_path.parent / "evidence" / "sessions" / self.session_id
 
     def _build_ui(self, initial_source: str) -> None:
         central = QWidget()
         layout = QVBoxLayout(central)
-        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
-        title = QLabel("Pediatria Local - analise visual de acompanhamento")
-        title.setStyleSheet("font-size: 17px; font-weight: bold;")
+        title = QLabel("Pediatria Local")
+        title.setStyleSheet("font-size: 16px; font-weight: bold;")
         layout.addWidget(title)
 
-        subtitle = QLabel(
-            "Demonstracao local com modelo pediatrico. Nenhum alerta e enviado ao WebGuardiao."
-        )
-        subtitle.setStyleSheet("color: #666;")
-        layout.addWidget(subtitle)
+        service_row = QHBoxLayout()
+        self.service_status_label = QLabel("Servico local: verificando...")
+        self.service_status_label.setStyleSheet("color: #888;")
+        self.service_button = QPushButton("Iniciar servico")
+        self.service_button.clicked.connect(self._on_service_button_clicked)
+        service_row.addWidget(self.service_status_label, 1)
+        service_row.addWidget(self.service_button)
+        layout.addLayout(service_row)
 
-        panel = QGroupBox("Configuracao da rodada")
+        panel = QGroupBox("Operacao")
         panel.setStyleSheet("QGroupBox { font-weight: bold; }")
         panel_layout = QGridLayout(panel)
         panel_layout.setContentsMargins(8, 8, 8, 8)
-        panel_layout.setHorizontalSpacing(12)
+        panel_layout.setHorizontalSpacing(8)
         panel_layout.setVerticalSpacing(4)
-
-        left_form = QFormLayout()
-        left_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        left_form.setHorizontalSpacing(8)
-        left_form.setVerticalSpacing(4)
-        right_form = QFormLayout()
-        right_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        right_form.setHorizontalSpacing(8)
-        right_form.setVerticalSpacing(4)
 
         self.source_mode = QComboBox()
         self.source_mode.addItems([SOURCE_FILE, SOURCE_URL, SOURCE_USB])
         self.source_mode.currentTextChanged.connect(self._update_source_controls)
-        left_form.addRow("Fonte:", self.source_mode)
+        panel_layout.addWidget(QLabel("Fonte"), 0, 0)
+        panel_layout.addWidget(self.source_mode, 0, 1)
 
-        source_row = QHBoxLayout()
         self.source_value = QLineEdit(initial_source)
-        self.source_value.setPlaceholderText("Escolha um video local")
-        self.browse_button = QPushButton("Escolher video...")
+        self.source_value.setPlaceholderText("Escolha um video, URL RTSP ou camera USB")
+        self.browse_button = QPushButton("Escolher...")
         self.browse_button.clicked.connect(self._browse_video)
-        source_row.addWidget(self.source_value, 1)
-        source_row.addWidget(self.browse_button)
-        left_form.addRow("Arquivo / URL:", source_row)
+        panel_layout.addWidget(self.source_value, 0, 2, 1, 2)
+        panel_layout.addWidget(self.browse_button, 0, 4)
 
         self.usb_index = QSpinBox()
         self.usb_index.setRange(0, 20)
-        left_form.addRow("USB:", self.usb_index)
+        panel_layout.addWidget(QLabel("USB"), 0, 5)
+        panel_layout.addWidget(self.usb_index, 0, 6)
 
-        model_row = QHBoxLayout()
-        self.model_value = QLineEdit(str(self.model_path))
-        self.model_browse_button = QPushButton("Escolher modelo...")
-        self.model_browse_button.clicked.connect(self._browse_specialist_model)
-        model_row.addWidget(self.model_value, 1)
-        model_row.addWidget(self.model_browse_button)
-        left_form.addRow("Especialista:", model_row)
-
-        person_model_row = QHBoxLayout()
-        self.person_model_value = QLineEdit(str(self.person_model_path))
-        self.person_model_browse_button = QPushButton("Escolher pessoa...")
-        self.person_model_browse_button.clicked.connect(self._browse_person_model)
-        person_model_row.addWidget(self.person_model_value, 1)
-        person_model_row.addWidget(self.person_model_browse_button)
-        left_form.addRow("Detector pessoa:", person_model_row)
-
-        self.person_crop_checkbox = QCheckBox(
-            "Pessoa -> crop -> especialista"
-        )
-        self.person_crop_checkbox.setChecked(self.person_crop_pipeline_default)
-        right_form.addRow("Fluxo:", self.person_crop_checkbox)
-
-        self.force_cpu_checkbox = QCheckBox(
-            "Forcar CPU nesta rodada, mesmo se houver GPU"
-        )
+        self.force_cpu_checkbox = QCheckBox("Forcar CPU")
         self.force_cpu_checkbox.setChecked(self.force_cpu_default)
-        right_form.addRow("Dispositivo:", self.force_cpu_checkbox)
+        panel_layout.addWidget(self.force_cpu_checkbox, 1, 0, 1, 2)
 
-        self.weak_child_checkbox = QCheckBox(
-            "Usar candidatos infantis fracos persistentes"
-        )
-        self.weak_child_checkbox.setChecked(self.weak_child_candidates_default)
-        right_form.addRow("Sensibilidade:", self.weak_child_checkbox)
-
-        self.collect_dataset_checkbox = QCheckBox(
-            "Coletar crops/frames para dataset de revisao"
-        )
+        self.collect_dataset_checkbox = QCheckBox("Modo coleta/treino")
         self.collect_dataset_checkbox.setChecked(self.collect_dataset_default)
-        right_form.addRow("Modo treino:", self.collect_dataset_checkbox)
-
-        self.dataset_interval = QSpinBox()
-        self.dataset_interval.setRange(1, 600)
-        self.dataset_interval.setValue(self.dataset_sample_interval_frames)
-        right_form.addRow("Coleta N frames:", self.dataset_interval)
-
-        self.dataset_max_per_track = QSpinBox()
-        self.dataset_max_per_track.setRange(1, 1000)
-        self.dataset_max_per_track.setValue(self.dataset_max_crops_per_track)
-        right_form.addRow("Max crops/track:", self.dataset_max_per_track)
+        panel_layout.addWidget(self.collect_dataset_checkbox, 1, 2, 1, 2)
 
         controls = QHBoxLayout()
-        self.start_button = QPushButton("Iniciar analise")
+        self.start_button = QPushButton("Iniciar")
         self.start_button.clicked.connect(self.start_analysis)
         self.stop_button = QPushButton("Parar")
         self.stop_button.clicked.connect(self.stop_analysis)
         self.stop_button.setEnabled(False)
         controls.addWidget(self.start_button)
         controls.addWidget(self.stop_button)
-        controls.addStretch()
-        right_form.addRow("", controls)
-
-        panel_layout.addLayout(left_form, 0, 0)
-        panel_layout.addLayout(right_form, 0, 1)
-        panel_layout.setColumnStretch(0, 3)
-        panel_layout.setColumnStretch(1, 2)
+        panel_layout.addLayout(controls, 1, 4, 1, 3)
+        panel_layout.setColumnStretch(2, 1)
         layout.addWidget(panel)
 
-        self.status = QLabel("Pronto para selecionar uma fonte.")
-        self.status.setStyleSheet(
+        self.pipeline_status = QLabel("ANALISANDO: aguardando inicio")
+        self.pipeline_status.setStyleSheet(
             "background: #20242b; color: white; padding: 5px; border-radius: 4px;"
         )
-        layout.addWidget(self.status)
+        layout.addWidget(self.pipeline_status)
+        self.status = self.pipeline_status
 
-        self.video = QLabel("Selecione uma fonte e clique em Iniciar analise")
+        self.session_summary_label = QLabel("Sessao: 0 frames | 0 alertas")
+        self.session_summary_label.setStyleSheet("color: #555;")
+        layout.addWidget(self.session_summary_label)
+
+        self.video = QLabel("Selecione uma fonte e clique em Iniciar")
         self.video.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.video.setMinimumSize(900, 500)
+        self.video.setMinimumSize(720, 420)
         self.video.setStyleSheet("background: #111; color: #ddd;")
         self.video.setScaledContents(True)
         layout.addWidget(self.video, 1)
+
+        # Configuracoes internas/protegidas: continuam existindo para CLI/testes,
+        # mas nao aparecem no viewer operacional.
+        self.model_value = QLineEdit(str(self.model_path))
+        self.model_value.setVisible(False)
+        self.model_browse_button = QPushButton("Escolher modelo...")
+        self.model_browse_button.setVisible(False)
+        self.model_browse_button.clicked.connect(self._browse_specialist_model)
+        self.person_model_value = QLineEdit(str(self.person_model_path))
+        self.person_model_value.setVisible(False)
+        self.person_model_browse_button = QPushButton("Escolher pessoa...")
+        self.person_model_browse_button.setVisible(False)
+        self.person_model_browse_button.clicked.connect(self._browse_person_model)
+        self.person_crop_checkbox = QCheckBox("Pessoa -> crop -> especialista")
+        self.person_crop_checkbox.setChecked(self.person_crop_pipeline_default)
+        self.person_crop_checkbox.setVisible(False)
+        self.weak_child_checkbox = QCheckBox("Usar candidatos infantis fracos persistentes")
+        self.weak_child_checkbox.setChecked(self.weak_child_candidates_default)
+        self.weak_child_checkbox.setVisible(False)
+        self.dataset_interval = QSpinBox()
+        self.dataset_interval.setRange(1, 600)
+        self.dataset_interval.setValue(self.dataset_sample_interval_frames)
+        self.dataset_interval.setVisible(False)
+        self.dataset_max_per_track = QSpinBox()
+        self.dataset_max_per_track.setRange(1, 1000)
+        self.dataset_max_per_track.setValue(self.dataset_max_crops_per_track)
+        self.dataset_max_per_track.setVisible(False)
+
         self.setCentralWidget(central)
         self._update_source_controls(self.source_mode.currentText())
 
@@ -1384,6 +1479,82 @@ class PediatriaPopupDemo(QMainWindow):
             SOURCE_USB: "O indice USB sera usado",
         }
         self.source_value.setPlaceholderText(placeholders[mode])
+
+    def _set_service_status(self, running: bool | None, note: str = "") -> None:
+        if running is True:
+            text = f"Servico local: rodando ({service_launcher.DEFAULT_HOST}:{service_launcher.DEFAULT_PORT})"
+            style = "color: #2e7d32;"
+        elif running is False:
+            text = "Servico local: parado" + (f" - {note}" if note else "")
+            style = "color: #c62828;"
+        else:
+            text = f"Servico local: {note or 'verificando...'}"
+            style = "color: #888;"
+        self.service_status_label.setText(text)
+        self.service_status_label.setStyleSheet(style)
+
+    def _check_service_async(self, callback: Callable[[bool], None]) -> None:
+        """Roda o health-check numa thread separada.
+
+        `is_service_running` faz uma chamada de rede bloqueante; rodando na
+        thread principal do Qt ela trava o loop de video/frames (mesma thread
+        do QTimer de captura) enquanto espera resposta. O resultado volta via
+        signal, que o Qt entrega de forma thread-safe na thread da GUI.
+        """
+        def worker() -> None:
+            running = service_launcher.is_service_running()
+            self._service_check_done.emit(callback, running)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _auto_check_service_on_startup(self) -> None:
+        self._check_service_async(self._handle_startup_check)
+
+    def _handle_startup_check(self, running: bool) -> None:
+        # So checa e mostra o status: nao sobe o servico sozinho. Um segundo
+        # processo Python disputando CPU com a inferencia (sobretudo com
+        # force_cpu) deixa a analise mais lenta. Quem precisar do servico
+        # local clica em "Iniciar servico".
+        self._set_service_status(running, "" if running else "nao iniciado")
+
+    def _on_service_button_clicked(self) -> None:
+        self.service_button.setEnabled(False)
+        self._set_service_status(None, "verificando...")
+        self._check_service_async(self._handle_button_check)
+
+    def _handle_button_check(self, running: bool) -> None:
+        if running:
+            self._set_service_status(True)
+            self.service_button.setEnabled(True)
+            return
+        self._start_service_and_poll()
+
+    def _start_service_and_poll(self) -> None:
+        self.service_button.setEnabled(False)
+        self._set_service_status(None, "iniciando...")
+        try:
+            self._service_process = service_launcher.start_service_process()
+        except Exception as exc:
+            self._set_service_status(False, f"falha ao iniciar ({exc})")
+            self.service_button.setEnabled(True)
+            return
+        self._service_start_attempts = 0
+        self._service_poll_timer.start(500)
+
+    def _poll_service_startup(self) -> None:
+        self._check_service_async(self._handle_poll_check)
+
+    def _handle_poll_check(self, running: bool) -> None:
+        self._service_start_attempts += 1
+        if running:
+            self._set_service_status(True)
+            self.service_button.setEnabled(True)
+            return
+        if self._service_start_attempts >= 20:
+            self._set_service_status(False, "nao respondeu a tempo")
+            self.service_button.setEnabled(True)
+            return
+        self._service_poll_timer.start(500)
 
     def _browse_video(self) -> None:
         filename, _filter = QFileDialog.getOpenFileName(
@@ -1441,60 +1612,57 @@ class PediatriaPopupDemo(QMainWindow):
                     else ""
                 )
                 raise OSError(f"Nao foi possivel abrir a fonte selecionada.{extra}")
-            selected_model_path = resolve_model_path(
-                self.model_value.text(),
-                self.model_path,
+            selected_model_path = resolve_model_path(str(self.model_path), self.model_path)
+            selected_person_model_path = resolve_model_path(
+                str(self.person_model_path),
+                self.person_model_path,
             )
-            if self.runner is None or selected_model_path != self._loaded_specialist_model_path:
-                self.status.setText(f"Carregando especialista: {selected_model_path.name}...")
-                QApplication.processEvents()
-                self.runner = PediatricsDetectorMvpRunner(selected_model_path)
-                self.model_path = selected_model_path
-                self._loaded_specialist_model_path = selected_model_path
-                self.crop_pipeline = None
-                self._loaded_person_model_path = None
-            if self.person_crop_checkbox.isChecked():
-                selected_person_model_path = resolve_model_path(
-                    self.person_model_value.text(),
-                    self.person_model_path,
-                )
-                if not selected_person_model_path.exists():
-                    raise FileNotFoundError(
-                        f"Detector de pessoa nao encontrado: {selected_person_model_path}"
-                    )
-                if (
-                    self.crop_pipeline is None
-                    or selected_person_model_path != self._loaded_person_model_path
-                ):
-                    self.status.setText(
-                        f"Carregando detector pessoa: {selected_person_model_path.name}..."
-                    )
-                    QApplication.processEvents()
-                    self.crop_pipeline = PersonCropSpecialistPipeline(
-                        person_model_path=selected_person_model_path,
-                        specialist_model=self.runner.model,
-                        specialist_names=self.runner.names,
-                    )
-                    self.person_model_path = selected_person_model_path
-                    self._loaded_person_model_path = selected_person_model_path
-            else:
-                self.crop_pipeline = None
+            self.status.setText("Preparando analise local...")
+            QApplication.processEvents()
+            self.service = PediatriaService(
+                PediatriaServiceConfig(
+                    specialist_model_path=selected_model_path,
+                    person_model_path=selected_person_model_path,
+                    confidence=self.confidence,
+                    device=self.device,
+                    person_crop_pipeline=self.person_crop_pipeline_default,
+                    person_confidence=self.person_confidence,
+                    crop_cache_frames=self.crop_cache_frames,
+                    weak_child_candidates=self.weak_child_candidates_default,
+                    weak_child_confidence=self.weak_child_confidence,
+                ),
+                runner_factory=PediatricsDetectorMvpRunner,
+                crop_pipeline_factory=PersonCropSpecialistPipeline,
+                identity_stabilizer_factory=PediatricIdentityStabilizer,
+                weak_child_promoter_factory=lambda: WeakChildCandidatePromoter(
+                    min_hits=self.weak_child_promote_frames,
+                ),
+            )
+            self.service.start_session()
+            self.runner = self.service.runner
+            self.crop_pipeline = self.service.crop_pipeline
+            self.model_path = selected_model_path
+            self.person_model_path = selected_person_model_path
+            self._loaded_specialist_model_path = selected_model_path
+            self._loaded_person_model_path = selected_person_model_path
         except (OSError, ValueError, FileNotFoundError) as exc:
             if capture is not None:
                 capture.release()
             QMessageBox.warning(self, "Fonte indisponivel", str(exc))
             self.status.setText(f"Falha ao iniciar: {exc}")
             return
+        except Exception as exc:
+            if capture is not None:
+                capture.release()
+            QMessageBox.warning(self, "Falha ao preparar", str(exc))
+            self.status.setText(f"Falha ao preparar analise: {exc}")
+            return
 
         self.stop_analysis()
         self.capture = capture
         self.current_source = source
-        self.analyzer = CompanionshipAnalyzer()
-        self.role_adjuster = PediatricRoleContextAdjuster()
-        self.identity_stabilizer.reset()
-        self.weak_child_promoter.reset()
-        if self.crop_pipeline is not None:
-            self.crop_pipeline.reset()
+        if self.service is not None:
+            self.service.reset_session_state()
         self.alert_latch.clear()
         self.frame_index = 0
         self.popup_count = 0
@@ -1503,9 +1671,15 @@ class PediatriaPopupDemo(QMainWindow):
         self._resolved_frames_by_camera.clear()
         self._last_suppressed_log.clear()
         self.session_started_at = datetime.now()
+        self.session_id = self.session_started_at.strftime("%Y%m%d_%H%M%S")
         self.evidence_dir = self._make_session_evidence_dir()
         self.evidence_dir.mkdir(parents=True, exist_ok=True)
         self.events_log_path = self.evidence_dir / "events.jsonl"
+        self.session_event_counts.clear()
+        self.session_status_counts.clear()
+        self.session_suppression_counts.clear()
+        self.session_evidence_error_counts.clear()
+        self.session_person_detector_zero = 0
         self.dataset_collector = None
         source_name = source_display_name(source)
         if self.collect_dataset_checkbox.isChecked():
@@ -1521,8 +1695,8 @@ class PediatriaPopupDemo(QMainWindow):
                 requested_device=self.requested_device,
                 resolved_device=self.device,
                 device_reason=self.device_reason,
-                sample_interval_frames=self.dataset_interval.value(),
-                max_crops_per_track=self.dataset_max_per_track.value(),
+                sample_interval_frames=self.dataset_sample_interval_frames,
+                max_crops_per_track=self.dataset_max_crops_per_track,
             )
         fps = capture.get(cv2.CAP_PROP_FPS) or 30.0
         self.performance_profile = performance_profile_for_device(self.device, fps)
@@ -1530,32 +1704,18 @@ class PediatriaPopupDemo(QMainWindow):
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
         self.force_cpu_checkbox.setEnabled(False)
-        self.model_value.setEnabled(False)
-        self.model_browse_button.setEnabled(False)
-        self.person_crop_checkbox.setEnabled(False)
-        self.person_model_value.setEnabled(False)
-        self.person_model_browse_button.setEnabled(False)
-        self.weak_child_checkbox.setEnabled(False)
         self.collect_dataset_checkbox.setEnabled(False)
-        self.dataset_interval.setEnabled(False)
-        self.dataset_max_per_track.setEnabled(False)
         self._append_session_log(
             {
                 "event_type": "analysis_started",
                 "source": source_name,
                 "raw_source": redact_source_value(source),
-                "model": str(self.model_path),
-                "confidence": self.confidence,
                 "source_fps": fps,
                 "requested_device": self.requested_device,
                 "resolved_device": self.device,
                 "device_reason": self.device_reason,
                 "force_cpu": self.force_cpu_checkbox.isChecked(),
-                "person_crop_pipeline": self.person_crop_checkbox.isChecked(),
-                "person_model": str(self.person_model_path),
-                "weak_child_candidates": self.weak_child_checkbox.isChecked(),
-                "weak_child_confidence": self.weak_child_confidence,
-                "weak_child_promote_frames": self.weak_child_promote_frames,
+                "person_crop_pipeline": self.person_crop_pipeline_default,
                 "performance_profile": self.performance_profile,
                 "dataset_collection": (
                     self.dataset_collector.summary()
@@ -1564,10 +1724,7 @@ class PediatriaPopupDemo(QMainWindow):
                 ),
             }
         )
-        self.status.setText(
-            f"Analisando: {source_name} | dispositivo={self.device} | "
-            f"perfil={self.device_reason} | analise~{self.performance_profile['target_analysis_fps']} fps"
-        )
+        self.status.setText(f"Analisando {source_name} | CPU/GPU: {self.device}")
 
     def stop_analysis(self) -> None:
         self.timer.stop()
@@ -1613,7 +1770,7 @@ class PediatriaPopupDemo(QMainWindow):
             self.current_source = None
 
     def _next_frame(self) -> None:
-        if self.capture is None or self.runner is None:
+        if self.capture is None or self.service is None:
             return
         ok, frame = self.capture.read()
         if not ok or frame is None:
@@ -1625,39 +1782,8 @@ class PediatriaPopupDemo(QMainWindow):
 
         self.frame_index += 1
         clean_frame = frame.copy()
-        weak_child_enabled = self.weak_child_checkbox.isChecked()
-        crop_pipeline_enabled = (
-            self.person_crop_checkbox.isChecked()
-            and self.crop_pipeline is not None
-        )
-        inference_confidence = (
-            min(self.confidence, self.weak_child_confidence)
-            if weak_child_enabled and not crop_pipeline_enabled
-            else self.confidence
-        )
-
-        inference_started = time.perf_counter()
         try:
-            if crop_pipeline_enabled:
-                parsed_detections, person_detections = self.crop_pipeline.detect_and_classify(
-                    frame,
-                    frame_index=self.frame_index,
-                    device=self.device,
-                    person_confidence=self.person_confidence,
-                    specialist_accept_confidence=self.confidence,
-                    cache_ttl_frames=self.crop_cache_frames,
-                )
-                result = None
-            else:
-                result = self.runner.model.track(
-                    frame,
-                    persist=True,
-                    conf=inference_confidence,
-                    device=self.device,
-                    tracker="bytetrack.yaml",
-                    verbose=False,
-                )[0]
-                person_detections = []
+            frame_result = self.service.process_frame(clean_frame, frame_id=self.frame_index)
         except Exception as exc:
             reason = str(exc).lower()
             if self.device != "cpu" and (
@@ -1665,136 +1791,82 @@ class PediatriaPopupDemo(QMainWindow):
             ):
                 self.device = "cpu"
                 self.device_reason = "gpu_indisponivel_fallback_cpu"
+                if self.service is not None:
+                    self.service.set_device("cpu")
                 fps = self.capture.get(cv2.CAP_PROP_FPS) if self.capture is not None else 30.0
                 self.performance_profile = performance_profile_for_device(self.device, fps or 30.0)
                 self.timer.start(max(1, int(1000 / float(self.performance_profile["display_fps"]))))
-                self.status.setText(
-                    "GPU indisponivel ou com pouca memoria. Reprocessando em CPU "
-                    f"com analise~{self.performance_profile['target_analysis_fps']} fps."
-                )
-                if crop_pipeline_enabled:
-                    parsed_detections, person_detections = self.crop_pipeline.detect_and_classify(
-                        frame,
-                        frame_index=self.frame_index,
-                        device=self.device,
-                        person_confidence=self.person_confidence,
-                        specialist_accept_confidence=self.confidence,
-                        cache_ttl_frames=self.crop_cache_frames,
-                    )
-                    result = None
-                else:
-                    result = self.runner.model.track(
-                        frame,
-                        persist=True,
-                        conf=inference_confidence,
-                        device=self.device,
-                        tracker="bytetrack.yaml",
-                        verbose=False,
-                    )[0]
-                    person_detections = []
+                self.status.setText("GPU indisponivel. Reprocessando em CPU.")
+                try:
+                    frame_result = self.service.process_frame(clean_frame, frame_id=self.frame_index)
+                except Exception as retry_exc:
+                    self._handle_inference_failure(retry_exc)
+                    return
             else:
-                self.status.setText(f"Falha na inferencia: {exc}")
-                self._append_session_log(
-                    {
-                        "event_type": "inference_failed",
-                        "source": source_display_name(self.current_source or "pediatria_local"),
-                        "frame_index": self.frame_index,
-                        "resolved_device": self.device,
-                        "device_reason": self.device_reason,
-                        "error": str(exc),
-                    }
-                )
-                self.stop_analysis()
+                self._handle_inference_failure(exc)
                 return
-        self.latencies.append((time.perf_counter() - inference_started) * 1000.0)
-        if not crop_pipeline_enabled:
-            parsed_detections = self.runner._parse_result(result)
-            person_detections = []
-        normal_detections = [
-            item for item in parsed_detections if item.confidence >= self.confidence
-        ]
-        weak_child_detections: list[PediatricDetection] = []
-        weak_child_promoted: list[PediatricDetection] = []
-        if weak_child_enabled:
-            weak_child_detections = [
-                item
-                for item in parsed_detections
-                if item.role == "child"
-                and self.weak_child_confidence <= item.confidence < self.confidence
-            ]
-            adult_blockers = [
-                item
-                for item in parsed_detections
-                if item.role == "adult" and item.confidence >= self.weak_child_confidence
-            ]
-            weak_child_promoted = self.weak_child_promoter.promote(
-                weak_child_detections,
-                adult_blockers,
-                frame_index=self.frame_index,
-            )
-            source_name_for_weak = source_display_name(
-                self.current_source or "pediatria_local"
-            )
-            for promotion in self.weak_child_promoter.last_promotions:
-                self._append_session_log(
-                    {
-                        "event_type": "weak_child_promoted",
-                        "source": source_name_for_weak,
-                        "frame_index": self.frame_index,
-                        "original_track_id": promotion.original_track_id,
-                        "stable_track_id": promotion.stable_track_id,
-                        "hits": promotion.hits,
-                        "confidence": promotion.confidence,
-                        "spatial_score": promotion.spatial_score,
-                        "size_score": promotion.size_score,
-                        "weak_child_confidence": self.weak_child_confidence,
-                        "promoted_confidence": self.weak_child_promoter.promoted_confidence,
-                    }
-                )
-        resolved = self.role_adjuster.adjust(
-            resolve_role_conflicts(normal_detections + weak_child_promoted),
-            frame_index=self.frame_index,
-        )
-        resolved = self.identity_stabilizer.stabilize(
-            resolved,
-            clean_frame,
-            frame_index=self.frame_index,
-        )
-        resolved = dedupe_detections_by_track(resolved)
-        if self.identity_stabilizer.last_merges:
-            source_name_for_merge = source_display_name(
-                self.current_source or "pediatria_local"
-            )
-            for merge in self.identity_stabilizer.last_merges:
-                self._append_session_log(
-                    {
-                        "event_type": "identity_merge",
-                        "source": source_name_for_merge,
-                        "frame_index": self.frame_index,
-                        "original_track_id": merge.original_track_id,
-                        "stable_track_id": merge.stable_track_id,
-                        "role_before": merge.role_before,
-                        "role_after": merge.role_after,
-                        "score": merge.score,
-                        "palette_similarity": merge.palette_similarity,
-                        "spatial_score": merge.spatial_score,
-                        "size_score": merge.size_score,
-                        "dominant_color": merge.dominant_color,
-                    }
-                )
-        tracks = [
-            CompanionTrack(item.track_id, item.bbox_xyxy, item.role, item.confidence)
-            for item in resolved
-        ]
-        state = self.analyzer.observe(tracks)
+        self.latencies.append(frame_result.latency_ms)
+        resolved = frame_result.resolved_detections
+        person_detections = frame_result.person_detections
+        weak_child_detections = frame_result.weak_child_detections
+        weak_child_promoted = frame_result.weak_child_promotions
+        state = frame_result.state
         self.states[state.stable_state] += 1
         source_name = source_display_name(self.current_source or "pediatria_local")
+        self._update_pipeline_status(state.stable_state, source_name)
+        for promotion in frame_result.weak_promotions:
+            self._append_session_log(
+                {
+                    "event_type": "weak_child_promoted",
+                    "source": source_name,
+                    "frame_index": self.frame_index,
+                    "original_track_id": promotion.original_track_id,
+                    "stable_track_id": promotion.stable_track_id,
+                    "hits": promotion.hits,
+                    "confidence": promotion.confidence,
+                    "spatial_score": promotion.spatial_score,
+                    "size_score": promotion.size_score,
+                    "weak_child_confidence": self.weak_child_confidence,
+                    "promoted_confidence": self.service.weak_child_promoter.promoted_confidence,
+                }
+            )
+        for merge in frame_result.identity_merges:
+            self._append_session_log(
+                {
+                    "event_type": "identity_merge",
+                    "source": source_name,
+                    "frame_index": self.frame_index,
+                    "original_track_id": merge.original_track_id,
+                    "stable_track_id": merge.stable_track_id,
+                    "role_before": merge.role_before,
+                    "role_after": merge.role_after,
+                    "score": merge.score,
+                    "palette_similarity": merge.palette_similarity,
+                    "spatial_score": merge.spatial_score,
+                    "size_score": merge.size_score,
+                    "dominant_color": merge.dominant_color,
+                }
+            )
         if self.dataset_collector is not None:
             self.dataset_collector.collect(
                 frame_index=self.frame_index,
                 clean_frame=clean_frame,
                 detections=resolved,
                 state=state,
+            )
+        diagnostic_evidence_paths: dict[str, str] = {}
+        diagnostic_evidence_errors: list[str] = []
+        if self._should_log_frame_diagnostic():
+            diagnostic_evidence_paths, diagnostic_evidence_errors = self._save_event_evidence(
+                event_type="frame_diagnostic",
+                source_name=source_name,
+                state=state,
+                child=None,
+                detections=resolved,
+                person_detections=person_detections,
+                clean_frame=clean_frame,
+                popup_emitido=False,
+                suppression_reason=None,
             )
         self._append_frame_diagnostic_if_due(
             state=state,
@@ -1803,8 +1875,9 @@ class PediatriaPopupDemo(QMainWindow):
             weak_child_detections=weak_child_detections,
             weak_child_promotions=weak_child_promoted,
             source_name=source_name,
+            evidence_paths=diagnostic_evidence_paths,
+            evidence_errors=diagnostic_evidence_errors,
         )
-
         if state.stable_state in {"CHILD_ALONE", "CHILD_SEPARATED"}:
             self._resolved_frames_by_camera[source_name] = 0
             alert_child_track_ids = {
@@ -1831,13 +1904,16 @@ class PediatriaPopupDemo(QMainWindow):
                 )
                 evidence = self._frame_to_pixmap(evidence_frame)
                 crop = self._crop_to_pixmap(clean_frame, child.bbox_xyxy)
-                evidence_paths = self._save_alert_evidence(
+                evidence_paths, evidence_errors = self._save_event_evidence(
+                    event_type="popup_alert",
                     source_name=source_name,
-                    child=child,
                     state=state,
+                    child=child,
                     detections=resolved,
+                    person_detections=person_detections,
                     clean_frame=clean_frame,
-                    evidence_frame=evidence_frame,
+                    popup_emitido=True,
+                    suppression_reason=None,
                 )
                 self._append_event_log(
                     "popup_alert",
@@ -1845,7 +1921,10 @@ class PediatriaPopupDemo(QMainWindow):
                     state=state,
                     child=child,
                     detections=resolved,
+                    person_detections=person_detections,
                     evidence_paths=evidence_paths,
+                    evidence_errors=evidence_errors,
+                    popup_emitido=True,
                 )
                 self._show_popup(
                     source_name,
@@ -1861,6 +1940,8 @@ class PediatriaPopupDemo(QMainWindow):
                     child=child,
                     state=state,
                     detections=resolved,
+                    person_detections=person_detections,
+                    clean_frame=clean_frame,
                 )
         else:
             self._resolved_frames_by_camera[source_name] += 1
@@ -1869,6 +1950,38 @@ class PediatriaPopupDemo(QMainWindow):
 
         self.runner._annotate(frame, resolved, state.stable_state, self.frame_index)
         self.video.setPixmap(self._frame_to_pixmap(frame))
+
+
+
+    def _update_pipeline_status(self, stable_state: str, source_name: str) -> None:
+        labels = {
+            "ACCOMPANIED": "CRIANCA ACOMPANHADA",
+            "CHILD_ALONE": "CRIANCA DESACOMPANHADA",
+            "CHILD_SEPARATED": "CRIANCA DESACOMPANHADA",
+            "NO_CHILD": "SEM CRIANCA",
+            "UNCERTAIN": "ANALISANDO",
+        }
+        text = labels.get(stable_state, "ANALISANDO")
+        if hasattr(self, "pipeline_status"):
+            self.pipeline_status.setText(f"{text}: {source_name}")
+        if hasattr(self, "session_summary_label"):
+            self.session_summary_label.setText(
+                f"Sessao: {self.frame_index} frames | {self.popup_count} alertas"
+            )
+
+    def _handle_inference_failure(self, exc: Exception) -> None:
+        self.status.setText(f"Falha na inferencia: {exc}")
+        self._append_session_log(
+            {
+                "event_type": "inference_failed",
+                "source": source_display_name(self.current_source or "pediatria_local"),
+                "frame_index": self.frame_index,
+                "resolved_device": self.device,
+                "device_reason": self.device_reason,
+                "error": str(exc),
+            }
+        )
+        self.stop_analysis()
 
     @staticmethod
     def _frame_to_pixmap(frame: Any) -> QPixmap:
@@ -1900,50 +2013,119 @@ class PediatriaPopupDemo(QMainWindow):
         crop = frame[y1:y2, x1:x2]
         return cls._frame_to_pixmap(crop) if crop.size else None
 
-    def _save_alert_evidence(
+    def _should_log_frame_diagnostic(self) -> bool:
+        interval = self.diagnostic_log_interval_frames
+        return interval > 0 and self.frame_index % interval == 0
+
+    def _event_status_final(
         self,
-        *,
-        source_name: str,
-        child: PediatricDetection,
         state: Any,
         detections: list[PediatricDetection],
+        person_detections: list[PediatricDetection],
+    ) -> str:
+        person_count = len(person_detections)
+        if person_count == 0 and not detections:
+            return "SEM_PESSOA"
+        if state.stable_state == "ACCOMPANIED":
+            return "CRIANCA_ACOMPANHADA"
+        if state.stable_state in {"CHILD_ALONE", "CHILD_SEPARATED"}:
+            return "CRIANCA_DESACOMPANHADA"
+        if state.stable_state == "NO_CHILD":
+            return "NO_CHILD"
+        if state.stable_state == "UNCERTAIN":
+            return "UNCERTAIN"
+        return "ANALISANDO"
+
+    @staticmethod
+    def _best_detection(
+        detections: list[PediatricDetection],
+        role: str | None = None,
+    ) -> PediatricDetection | None:
+        candidates = [item for item in detections if role is None or item.role == role]
+        return max(candidates, key=lambda item: item.confidence, default=None)
+
+    @staticmethod
+    def _write_image(path: Path, image: Any, errors: list[str], label: str) -> bool:
+        try:
+            if image is None or not hasattr(image, "size") or image.size == 0:
+                errors.append(f"{label}:empty_image")
+                return False
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if not cv2.imwrite(str(path), image):
+                errors.append(f"{label}:imwrite_false")
+                return False
+            if not path.exists():
+                errors.append(f"{label}:missing_after_write")
+                return False
+            return True
+        except Exception as exc:
+            errors.append(f"{label}:{type(exc).__name__}:{exc}")
+            return False
+
+    def _save_event_evidence(
+        self,
+        *,
+        event_type: str,
+        source_name: str,
+        state: Any,
+        child: PediatricDetection | None,
+        detections: list[PediatricDetection],
+        person_detections: list[PediatricDetection],
         clean_frame: Any,
-        evidence_frame: Any,
-    ) -> dict[str, str]:
+        popup_emitido: bool,
+        suppression_reason: str | None,
+    ) -> tuple[dict[str, str], list[str]]:
         timestamp = datetime.now()
+        crop_detection = choose_event_crop_detection(child, detections, person_detections)
+        track_label = (
+            f"track_{crop_detection.track_id}" if crop_detection is not None else "track_none"
+        )
         stem = (
             f"{timestamp.strftime('%Y%m%d_%H%M%S_%f')[:-3]}"
-            f"__{safe_name(source_name)}__track_{child.track_id}__{state.stable_state}"
+            f"__{safe_name(source_name)}__{track_label}__{event_type}__{state.stable_state}"
         )
-        camera_dir = self.evidence_dir / safe_name(source_name)
-        camera_dir.mkdir(parents=True, exist_ok=True)
-        paths = {
-            "frame": camera_dir / f"{stem}_frame.jpg",
-            "alert_bbox": camera_dir / f"{stem}_bbox.jpg",
-            "crop": camera_dir / f"{stem}_crop.jpg",
-            "metadata": camera_dir / f"{stem}.json",
+        errors: list[str] = []
+        paths: dict[str, Path] = {
+            "frame": self.evidence_dir / "frames" / f"{stem}_frame.jpg",
+            "annotated": self.evidence_dir / "annotated" / f"{stem}_bbox.jpg",
+            "metadata": self.evidence_dir / "metadata" / f"{stem}.json",
         }
-        cv2.imwrite(str(paths["frame"]), clean_frame)
-        cv2.imwrite(str(paths["alert_bbox"]), evidence_frame)
-        crop = crop_frame(clean_frame, child.bbox_xyxy)
-        if crop is not None:
-            cv2.imwrite(str(paths["crop"]), crop)
+        if self._write_image(paths["frame"], clean_frame, errors, "frame"):
+            pass
+        annotated = draw_event_evidence_frame(clean_frame, detections, crop_detection)
+        self._write_image(paths["annotated"], annotated, errors, "annotated")
+        if crop_detection is not None:
+            bbox = normalize_bbox_for_image(clean_frame, crop_detection.bbox_xyxy)
+            if bbox is None:
+                errors.append("crop:invalid_bbox")
+            else:
+                crop = crop_frame(clean_frame, crop_detection.bbox_xyxy)
+                crop_path = self.evidence_dir / "crops" / f"{stem}_crop.jpg"
+                if self._write_image(crop_path, crop, errors, "crop"):
+                    paths["crop"] = crop_path
         else:
-            paths.pop("crop", None)
-
+            errors.append("crop:no_detection")
+        evidence_paths = {key: str(value) for key, value in paths.items() if key != "metadata"}
         metadata = self._build_event_payload(
-            event_type="popup_alert",
+            event_type=event_type,
             source_name=source_name,
             state=state,
             child=child,
             detections=detections,
-            evidence_paths={key: str(value) for key, value in paths.items() if key != "metadata"},
+            person_detections=person_detections,
+            evidence_paths=evidence_paths,
+            evidence_errors=errors,
+            popup_emitido=popup_emitido,
+            suppression_reason=suppression_reason,
         )
+        metadata["metadata_path"] = str(paths["metadata"])
+        paths["metadata"].parent.mkdir(parents=True, exist_ok=True)
         paths["metadata"].write_text(
             json.dumps(metadata, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
-        return {key: str(value) for key, value in paths.items()}
+        evidence_paths["metadata"] = str(paths["metadata"])
+        return evidence_paths, errors
 
     def _append_event_log(
         self,
@@ -1953,7 +2135,11 @@ class PediatriaPopupDemo(QMainWindow):
         state: Any,
         child: PediatricDetection | None,
         detections: list[PediatricDetection],
+        person_detections: list[PediatricDetection] | None = None,
         evidence_paths: dict[str, str] | None = None,
+        evidence_errors: list[str] | None = None,
+        popup_emitido: bool = False,
+        suppression_reason: str | None = None,
     ) -> None:
         payload = self._build_event_payload(
             event_type=event_type,
@@ -1961,8 +2147,13 @@ class PediatriaPopupDemo(QMainWindow):
             state=state,
             child=child,
             detections=detections,
+            person_detections=person_detections or [],
             evidence_paths=evidence_paths or {},
+            evidence_errors=evidence_errors or [],
+            popup_emitido=popup_emitido,
+            suppression_reason=suppression_reason,
         )
+        self._record_event_summary(payload)
         self.events_log_path.parent.mkdir(parents=True, exist_ok=True)
         with self.events_log_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -1983,24 +2174,38 @@ class PediatriaPopupDemo(QMainWindow):
         child: PediatricDetection,
         state: Any,
         detections: list[PediatricDetection],
+        person_detections: list[PediatricDetection],
+        clean_frame: Any,
     ) -> None:
         key = (source_name, child.track_id, state.stable_state)
         now = time.monotonic()
         if now - self._last_suppressed_log.get(key, 0.0) < 10.0:
             return
         self._last_suppressed_log[key] = now
-        payload = self._build_event_payload(
+        suppression_reason = "active_episode_or_camera_track_cooldown"
+        evidence_paths, evidence_errors = self._save_event_evidence(
             event_type="popup_suppressed",
             source_name=source_name,
             state=state,
             child=child,
             detections=detections,
-            evidence_paths={},
+            person_detections=person_detections,
+            clean_frame=clean_frame,
+            popup_emitido=False,
+            suppression_reason=suppression_reason,
         )
-        payload["suppression_reason"] = "active_episode_or_camera_track_cooldown"
-        self.events_log_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.events_log_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        self._append_event_log(
+            "popup_suppressed",
+            source_name=source_name,
+            state=state,
+            child=child,
+            detections=detections,
+            person_detections=person_detections,
+            evidence_paths=evidence_paths,
+            evidence_errors=evidence_errors,
+            popup_emitido=False,
+            suppression_reason=suppression_reason,
+        )
 
     def _append_frame_diagnostic_if_due(
         self,
@@ -2011,9 +2216,10 @@ class PediatriaPopupDemo(QMainWindow):
         weak_child_detections: list[PediatricDetection],
         weak_child_promotions: list[PediatricDetection],
         source_name: str,
+        evidence_paths: dict[str, str] | None = None,
+        evidence_errors: list[str] | None = None,
     ) -> None:
-        interval = self.diagnostic_log_interval_frames
-        if interval <= 0 or self.frame_index % interval != 0:
+        if not self._should_log_frame_diagnostic():
             return
         payload = self._build_event_payload(
             event_type="frame_diagnostic",
@@ -2021,10 +2227,13 @@ class PediatriaPopupDemo(QMainWindow):
             state=state,
             child=None,
             detections=detections,
-            evidence_paths={},
+            person_detections=person_detections,
+            evidence_paths=evidence_paths or {},
+            evidence_errors=evidence_errors or [],
+            popup_emitido=False,
+            suppression_reason=None,
         )
         payload["role_counts"] = role_counts(detections)
-        payload["person_detector_count"] = len(person_detections)
         payload["person_detector_top"] = [
             {
                 "track_id": item.track_id,
@@ -2059,7 +2268,7 @@ class PediatriaPopupDemo(QMainWindow):
                 "size_score": item.size_score,
                 "dominant_color": item.dominant_color,
             }
-            for item in self.identity_stabilizer.last_merges
+            for item in (self.service.identity_stabilizer.last_merges if self.service is not None else [])
         ]
         payload["weak_child_candidates"] = [
             {
@@ -2081,6 +2290,7 @@ class PediatriaPopupDemo(QMainWindow):
             }
             for item in weak_child_promotions
         ]
+        self._record_event_summary(payload)
         self.events_log_path.parent.mkdir(parents=True, exist_ok=True)
         with self.events_log_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -2093,7 +2303,11 @@ class PediatriaPopupDemo(QMainWindow):
         state: Any,
         child: PediatricDetection | None,
         detections: list[PediatricDetection],
+        person_detections: list[PediatricDetection],
         evidence_paths: dict[str, str],
+        evidence_errors: list[str],
+        popup_emitido: bool,
+        suppression_reason: str | None,
     ) -> dict[str, Any]:
         children = [
             {
@@ -2104,38 +2318,67 @@ class PediatriaPopupDemo(QMainWindow):
             }
             for item in state.children
         ]
-        selected_child = None
-        if child is not None:
-            selected_child = {
-                "track_id": child.track_id,
-                "role": child.role,
-                "confidence": child.confidence,
-                "bbox_xyxy": list(child.bbox_xyxy),
-            }
+        best_person = self._best_detection(person_detections)
+        best_child = self._best_detection(detections, "child")
+        best_detection = self._best_detection(detections)
+        crop_detection = choose_event_crop_detection(child, detections, person_detections)
+        status_final = self._event_status_final(state, detections, person_detections)
+        try:
+            force_cpu_checked = bool(
+                getattr(self, "force_cpu_checkbox", None)
+                and self.force_cpu_checkbox.isChecked()
+            )
+        except RuntimeError:
+            force_cpu_checked = False
         return {
             "event_type": event_type,
             "created_at": datetime.now().isoformat(timespec="milliseconds"),
+            "timestamp": datetime.now().isoformat(timespec="milliseconds"),
+            "session_id": self.session_id,
+            "camera_id": source_name,
             "source": source_name,
+            "frame_id": self.frame_index,
             "frame_index": self.frame_index,
+            "popup_emitido": popup_emitido,
+            "suppression_reason": suppression_reason,
+            "status_final": status_final,
             "requested_device": self.requested_device,
             "resolved_device": self.device,
+            "device_usado": self.device,
             "device_reason": self.device_reason,
+            "force_cpu": force_cpu_checked,
+            "modo_coleta": self.dataset_collector is not None,
+            "model_path": str(self.model_path),
+            "person_model_path": str(self.person_model_path),
             "raw_state": state.raw_state,
             "stable_state": state.stable_state,
             "reason": state.reason,
-            "selected_child": selected_child,
+            "person_detector_count": len(person_detections),
+            "person_confidence": best_person.confidence if best_person is not None else None,
+            "person_bbox_xyxy": list(best_person.bbox_xyxy) if best_person is not None else None,
+            "child_specialist_result": best_detection.role if best_detection is not None else None,
+            "child_confidence": best_child.confidence if best_child is not None else None,
+            "child_bbox_xyxy": list(best_child.bbox_xyxy) if best_child is not None else None,
+            "crop_bbox_xyxy": list(crop_detection.bbox_xyxy) if crop_detection is not None else None,
+            "selected_child": serialize_detection(child),
             "children": children,
-            "detections": [
-                {
-                    "track_id": item.track_id,
-                    "role": item.role,
-                    "confidence": item.confidence,
-                    "bbox_xyxy": list(item.bbox_xyxy),
-                }
-                for item in detections
-            ],
+            "detections": [serialize_detection(item) for item in detections],
             "evidence_paths": evidence_paths,
+            "evidence_errors": evidence_errors,
         }
+
+    def _record_event_summary(self, payload: dict[str, Any]) -> None:
+        event_type = str(payload.get("event_type") or "unknown")
+        status_final = str(payload.get("status_final") or "unknown")
+        self.session_event_counts[event_type] += 1
+        self.session_status_counts[status_final] += 1
+        suppression_reason = payload.get("suppression_reason")
+        if suppression_reason:
+            self.session_suppression_counts[str(suppression_reason)] += 1
+        if int(payload.get("person_detector_count") or 0) == 0:
+            self.session_person_detector_zero += 1
+        for error in payload.get("evidence_errors") or []:
+            self.session_evidence_error_counts[str(error)] += 1
 
     def _show_popup(
         self,
@@ -2202,6 +2445,7 @@ class PediatriaPopupDemo(QMainWindow):
                 if self.latencies
                 else None
             ),
+            "session_summary": self._build_session_summary(),
             "dataset_collection": (
                 self.dataset_collector.summary()
                 if self.dataset_collector is not None
@@ -2212,6 +2456,47 @@ class PediatriaPopupDemo(QMainWindow):
             json.dumps(report, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
+        self._write_session_summary_files(report["session_summary"])
+
+    def _build_session_summary(self) -> dict[str, Any]:
+        return {
+            "session_id": self.session_id,
+            "source": source_display_name(self.current_source or "pediatria_local"),
+            "evidence_dir": str(self.evidence_dir),
+            "events_log": str(self.events_log_path),
+            "total_frames_analisados": self.frame_index,
+            "total_popups": self.popup_count,
+            "total_suprimidos": self.session_event_counts.get("popup_suppressed", 0),
+            "total_uncertain": self.session_status_counts.get("UNCERTAIN", 0),
+            "total_no_child": self.session_status_counts.get("NO_CHILD", 0),
+            "total_sem_pessoa": self.session_status_counts.get("SEM_PESSOA", 0),
+            "total_person_detector_zero": self.session_person_detector_zero,
+            "event_type_counts": dict(self.session_event_counts),
+            "status_final_distribution": dict(self.session_status_counts),
+            "suppression_reason_distribution": dict(self.session_suppression_counts),
+            "evidence_error_distribution": dict(self.session_evidence_error_counts),
+            "stable_state_counts": dict(self.states),
+            "average_latency_ms": (
+                round(sum(self.latencies) / len(self.latencies), 2)
+                if self.latencies
+                else None
+            ),
+        }
+
+    def _write_session_summary_files(self, summary: dict[str, Any]) -> None:
+        self.evidence_dir.mkdir(parents=True, exist_ok=True)
+        (self.evidence_dir / "session_summary.json").write_text(
+            json.dumps(summary, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        csv_path = self.evidence_dir / "session_summary.csv"
+        with csv_path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["metric", "value"])
+            for key, value in summary.items():
+                if isinstance(value, (dict, list)):
+                    value = json.dumps(value, ensure_ascii=False)
+                writer.writerow([key, value])
 
     def closeEvent(self, event: Any) -> None:
         self.stop_analysis()
@@ -2358,3 +2643,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
