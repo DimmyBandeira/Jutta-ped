@@ -1,0 +1,186 @@
+{
+    "package":  "WebGuardiao Pediatria",
+    "jira":  "WEB-11",
+    "generated_at":  "2026-06-26T16:42:32.1475964-03:00",
+    "source_root":  "C:\\WebGuardião",
+    "source_branch":  "feature/modulo-pediatria",
+    "source_commit":  "6b00cb66a55f6612d236ddba95158ded30a458fd",
+    "includes_validation_videos":  false,
+    "files":  [
+                  {
+                      "path":  ".gitignore",
+                      "bytes":  94,
+                      "sha256":  "2c84a9810bcd0738bbb0fa122378c62a89d2af460c1643759e8a64648ca4a301"
+                  },
+                  {
+                      "path":  "docs\\pediatria_videos_reais_2026-06-19.md",
+                      "bytes":  7664,
+                      "sha256":  "a617e237b66a15047751d4aa34d05bacaadcc4ecf236db0dd57efd9bf3582e19"
+                  },
+                  {
+                      "path":  "iniciar_mvp.bat",
+                      "bytes":  1167,
+                      "sha256":  "f6e02036133fefee19ebfdbe991936871d5cdbcd69860965a5f7c7b784ea74a0"
+                  },
+                  {
+                      "path":  "modulo\\__init__.py",
+                      "bytes":  58,
+                      "sha256":  "dfa207183da1dfd85c0d397e46c63307e32f00100218cd839d13a2511cebf2c5"
+                  },
+                  {
+                      "path":  "modulo\\pediatria\\__init__.py",
+                      "bytes":  43,
+                      "sha256":  "3c525cfcde7f52efff8720fd7dd73f24a3ef75adc58d4dfba507abe1aff6b727"
+                  },
+                  {
+                      "path":  "modulo\\pediatria\\colab_dataset.py",
+                      "bytes":  6495,
+                      "sha256":  "d07f972d07af3479fba9d6d68a37eb06097f7f257413ab1684a96fe0aaf6a4b9"
+                  },
+                  {
+                      "path":  "modulo\\pediatria\\companionship.py",
+                      "bytes":  10603,
+                      "sha256":  "1746263b8fb518cc0aeddff125a053c87cbedeb3281d034359ee99482b1bbdcb"
+                  },
+                  {
+                      "path":  "modulo\\pediatria\\config.py",
+                      "bytes":  3655,
+                      "sha256":  "4f8860fce14d574ff068e2a6a21dab1cb8863c2d1dc159532adeabf7e7b486a6"
+                  },
+                  {
+                      "path":  "modulo\\pediatria\\contracts.py",
+                      "bytes":  2700,
+                      "sha256":  "17086d10b1289e935add6b9981992d5161d406db0292f6783d8445392208f018"
+                  },
+                  {
+                      "path":  "modulo\\pediatria\\detector_mvp.py",
+                      "bytes":  18706,
+                      "sha256":  "9eb4e06ea896ee043cd3e01265bafaea1c7015f3f682fb1e4f2ab414f0ccbc9f"
+                  },
+                  {
+                      "path":  "modulo\\pediatria\\mvp_popup.py",
+                      "bytes":  7308,
+                      "sha256":  "88ec0853057cc102ef437d9ae0a0948646e141a7716cea809ad35cdf4e72e5c5"
+                  },
+                  {
+                      "path":  "modulo\\pediatria\\mvp_voice.py",
+                      "bytes":  5558,
+                      "sha256":  "eb584ce3f3db5dbd83401605736755217b14ace03f7f0e4b9e960733b935d6fe"
+                  },
+                  {
+                      "path":  "README.md",
+                      "bytes":  1942,
+                      "sha256":  "87ca3fb3df1505298b238df674283b340d26d5a1ed527fd6b430d5cf4df3c1be"
+                  },
+                  {
+                      "path":  "requirements-mvp.txt",
+                      "bytes":  147,
+                      "sha256":  "39c573eeaaadb0437ce9b57ed9e897ba2b2dfe057b4f3602de909d7ab23751c6"
+                  },
+                  {
+                      "path":  "rodar_video_headless.bat",
+                      "bytes":  1060,
+                      "sha256":  "12d271aa1da1584a71a6b5a6f2d7f9aa88433e0361919470e63d202fd31a178b"
+                  },
+                  {
+                      "path":  "setup_mvp.ps1",
+                      "bytes":  1055,
+                      "sha256":  "188ab61c5473de14c9d47ae36e07902853608b81695cf67f69a7f710571b33f9"
+                  },
+                  {
+                      "path":  "src\\models\\pediatria_child_detector_v5.pt",
+                      "bytes":  5478682,
+                      "sha256":  "6b62d23ca0261f64d4663cf574fdd01b6e0a410d127f5ac254a224f5bd82adb9"
+                  },
+                  {
+                      "path":  "src\\models\\pediatria_child_detector_v6_jutta.pt",
+                      "bytes":  5447130,
+                      "sha256":  "830c6cb00ab27f95310b870d8999ca35220e29ab2c4b6a24bbfe2afcac319881"
+                  },
+                  {
+                      "path":  "src\\models\\pediatria_child_detector_v6_jutta_openvino_model\\metadata.yaml",
+                      "bytes":  506,
+                      "sha256":  "65e9f81e9f1f93b7975808afdcd10e059482a575c3fd21132334c8a5198d7932"
+                  },
+                  {
+                      "path":  "src\\models\\pediatria_child_detector_v6_jutta_openvino_model\\pediatria_child_detector_v6_jutta.bin",
+                      "bytes":  10431292,
+                      "sha256":  "f39e096c73dedf556dc5e0655916e6d57e2878ab37cc5d729487c6a9eb313ebe"
+                  },
+                  {
+                      "path":  "src\\models\\pediatria_child_detector_v6_jutta_openvino_model\\pediatria_child_detector_v6_jutta.xml",
+                      "bytes":  314689,
+                      "sha256":  "87cc719854af1a3bbd3f626b56a42f2571fc55c8f855dd76c71cd7487e8440ac"
+                  },
+                  {
+                      "path":  "testar_mvp.bat",
+                      "bytes":  238,
+                      "sha256":  "23dab8009faec77bfbe58ecf8c8833314adf9850b6ab9e371d9ef1a1da947389"
+                  },
+                  {
+                      "path":  "tests\\test_pediatria_colab_dataset.py",
+                      "bytes":  2644,
+                      "sha256":  "5606e3419b627ae185af96eb3f8c9913341f2b6047529222d9e0b2afd505a9c1"
+                  },
+                  {
+                      "path":  "tests\\test_pediatria_companionship.py",
+                      "bytes":  6442,
+                      "sha256":  "f2557bffb7a1962ffdf35e3f6e838103fb2efaba9a7cb679b68401ba37dc26c5"
+                  },
+                  {
+                      "path":  "tests\\test_pediatria_detector_mvp.py",
+                      "bytes":  1229,
+                      "sha256":  "0af0fe30d43493772fa9d08082839e78f50910d5dc2375729b6e8d97cddf789a"
+                  },
+                  {
+                      "path":  "tests\\test_pediatria_mvp_voice.py",
+                      "bytes":  3612,
+                      "sha256":  "bea393fe24205aa679a26e3cb9e2393d55ac7b1663f8a7787322602d5f228b58"
+                  },
+                  {
+                      "path":  "tests\\test_pediatria_popup_event_latch.py",
+                      "bytes":  1896,
+                      "sha256":  "54132a83905b61be18d32c3f75de2d7483e90942c16e8b412ddeb86d0e7af066"
+                  },
+                  {
+                      "path":  "tests\\test_pediatria_popup_mvp_tool.py",
+                      "bytes":  8954,
+                      "sha256":  "61cc4c51540834b09891aeed681a5df32335dfa09fc2d135e75c3a872bbda234"
+                  },
+                  {
+                      "path":  "tests\\test_pediatria_role_context_adjuster.py",
+                      "bytes":  4282,
+                      "sha256":  "10de8dc805a8cefa0ab5ead173940006bca0bd868c612976493187e99f54a1d4"
+                  },
+                  {
+                      "path":  "tests\\test_review_pediatria_dataset.py",
+                      "bytes":  1873,
+                      "sha256":  "b8c1d434f991618ff2390c2ff5be4de7f25f5ddede63c9a86b0ad723848d4bbc"
+                  },
+                  {
+                      "path":  "tools\\__init__.py",
+                      "bytes":  0,
+                      "sha256":  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                  },
+                  {
+                      "path":  "tools\\review_pediatria_dataset.py",
+                      "bytes":  16816,
+                      "sha256":  "ce69366855a6c1942550e1373c5ca785f4d369d327ea7892f8ab62cb9cd98d49"
+                  },
+                  {
+                      "path":  "tools\\rodar_pediatria_local.bat",
+                      "bytes":  1398,
+                      "sha256":  "b0a460feff9df9db8cc57f56062f1e5e928c627ac5a443ddda88269e12f33db8"
+                  },
+                  {
+                      "path":  "tools\\run_pediatria_detector_mvp.py",
+                      "bytes":  1558,
+                      "sha256":  "6e5a93aca9f61d946c928dd195bc24e426a8e8f7ad5eaf744a1ca53b88bbcc94"
+                  },
+                  {
+                      "path":  "tools\\run_pediatria_popup_mvp.py",
+                      "bytes":  64044,
+                      "sha256":  "e181a7f5b7e444401fed0aecc28d45cf6074afa4bb6d7c90831a904a22e44c3a"
+                  }
+              ]
+}

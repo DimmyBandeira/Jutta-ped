@@ -1,0 +1,1 @@
+"""Jutta-ped: MVP pediatrico standalone."""
