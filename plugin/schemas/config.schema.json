@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webguardiao.local/plugins/ia.pediatria/config.schema.json",
+  "title": "Config operacional da IA Pediatria",
+  "description": "Configuracao OPERACIONAL de uma instancia/sessao do plugin (por camera/stream). Nao inclui thresholds finos, caminhos de modelo nem heuristicas de acuracia -- esses permanecem na configuracao interna do servico (PediatriaServiceConfig), fora do alcance do Core, para nao afetar a acuracia via UI/API externa.",
+  "type": "object",
+  "required": ["stream_ref"],
+  "properties": {
+    "stream_ref": {
+      "type": "string",
+      "description": "Referencia de stream fornecida pelo Core (video_stream_ref). Preferido sobre 'source'. Ver README.md deste diretorio, secao 'stream_ref'.",
+      "minLength": 1
+    },
+    "source": {
+      "type": ["string", "integer"],
+      "description": "Compatibilidade com o modo atual do MVP: caminho de arquivo, URL RTSP/HTTP ou indice de camera USB. Se 'stream_ref' estiver presente, ele tem prioridade; 'source' e normalizado internamente como source_ref quando 'stream_ref' nao e fornecido (ver docs/pediatria_service_api.md)."
+    },
+    "camera_id": {
+      "type": "string",
+      "description": "Identificador operacional da camera/instancia. Se omitido, e derivado de stream_ref/source."
+    },
+    "requested_device": {
+      "type": "string",
+      "enum": ["auto", "cpu", "cuda:0"],
+      "default": "auto",
+      "description": "Dispositivo de inferencia solicitado. 'auto' escolhe GPU se disponivel e com memoria suficiente, senao CPU."
+    },
+    "force_cpu": {
+      "type": "boolean",
+      "default": false,
+      "description": "Forca CPU mesmo se GPU estiver disponivel."
+    },
+    "modo_coleta": {
+      "type": "boolean",
+      "default": false,
+      "description": "Ativa coleta de crops/frames para revisao humana/treino (nao afeta alertas)."
+    },
+    "cooldown_seconds": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 3600,
+      "default": 120,
+      "description": "Intervalo minimo entre alertas repetidos do mesmo track/estado (anti-flood)."
+    },
+    "diagnostic_log_interval_frames": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600,
+      "default": 60,
+      "description": "A cada quantos frames analisados um diagnostico de rotina e gravado na evidencia."
+    },
+    "report_dir": {
+      "type": "string",
+      "description": "Diretorio de saida operacional (evidencias, resumo de sessao). Opcional; usa o padrao do servico quando omitido."
+    }
+  },
+  "additionalProperties": false
+}

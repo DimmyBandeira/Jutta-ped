@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webguardiao.local/plugins/ia.pediatria/ui.schema.json",
+  "title": "UI Schema da IA Pediatria",
+  "description": "Formulario minimo que o Core deve renderizar para ativar/configurar este plugin por camera. O Core renderiza este schema por conta propria (principio 'UI/UX deve permanecer simples' do AGENTS.md); este plugin nao fornece a UI de producao, apenas o Demo Viewer opcional (tools/run_pediatria_viewer.py).",
+  "type": "object",
+  "x-checkbox-label": "IA Pediatria",
+  "x-form-title": "IA Pediatria - deteccao de crianca desacompanhada",
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "default": false,
+      "title": "Ativar IA Pediatria nesta camera",
+      "x-widget": "checkbox"
+    },
+    "camera_id": {
+      "type": "string",
+      "title": "Camera",
+      "x-widget": "camera_picker",
+      "description": "Selecionado a partir do cadastro de cameras do Core; o plugin recebe apenas a referencia (stream_ref)."
+    },
+    "force_cpu": {
+      "type": "boolean",
+      "default": false,
+      "title": "Forcar CPU",
+      "x-widget": "checkbox",
+      "x-advanced": true
+    },
+    "modo_coleta": {
+      "type": "boolean",
+      "default": false,
+      "title": "Coletar dados para treino/revisao",
+      "x-widget": "checkbox",
+      "x-advanced": true
+    },
+    "cooldown_seconds": {
+      "type": "number",
+      "default": 120,
+      "title": "Intervalo entre alertas repetidos (s)",
+      "x-widget": "number",
+      "x-advanced": true
+    }
+  },
+  "required": ["enabled", "camera_id"],
+  "additionalProperties": false,
+  "x-not-exposed": [
+    "thresholds de confianca",
+    "caminhos de modelo",
+    "detector_stride_frames",
+    "specialist_budget_per_frame",
+    "heuristicas de identidade/companhia"
+  ],
+  "x-not-exposed-reason": "Parametros de acuracia e desempenho fino permanecem na configuracao interna do servico; a UI schema do Core so expoe o que e seguro operar sem quebrar a IA (ver AGENTS.md, principio 10: 'UI/UX deve permanecer simples')."
+}

@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webguardiao.local/plugins/ia.pediatria/event.schema.json",
+  "title": "Risk event / target_context da IA Pediatria",
+  "description": "Formato de evento de risco emitido pelo plugin, alinhado aos aprendizados de TargetContext/AlertEvent citados no AGENTS.md do WebGuardiao Core. Ciclo de risco controlado pelo PLUGIN: opened/updated/resolved (o Core controla separadamente o ciclo operacional: received/acknowledged/assigned/closed).",
+  "type": "object",
+  "required": [
+    "type",
+    "plugin_id",
+    "instance_id",
+    "camera_id",
+    "stream_id",
+    "event_id",
+    "risk_cycle",
+    "captured_at",
+    "published_at",
+    "target_context"
+  ],
+  "properties": {
+    "type": {
+      "const": "risk_event"
+    },
+    "plugin_id": {
+      "type": "string",
+      "const": "ia.pediatria"
+    },
+    "instance_id": {
+      "type": "string",
+      "description": "Identidade estavel da instancia/sessao do plugin (equivale a session_id hoje)."
+    },
+    "camera_id": {
+      "type": "string"
+    },
+    "stream_id": {
+      "type": "string",
+      "description": "Identidade do stream_ref associado ao evento."
+    },
+    "event_id": {
+      "type": "string",
+      "description": "Identificador global e estavel do evento. Idempotente: reenvio do mesmo event_id nao deve duplicar o evento no Core."
+    },
+    "event_version": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 1,
+      "description": "Versao do payload deste evento, para evolucao compativel do contrato."
+    },
+    "risk_cycle": {
+      "type": "string",
+      "enum": ["opened", "updated", "resolved"],
+      "description": "Ciclo de risco produzido pelo plugin (nao confundir com o ciclo operacional do Core/Array)."
+    },
+    "risk_type": {
+      "type": "string",
+      "enum": [
+        "CRIANCA_DESACOMPANHADA",
+        "CRIANCA_ACOMPANHADA",
+        "SEM_PESSOA",
+        "UNCERTAIN",
+        "NO_CHILD",
+        "ANALISANDO"
+      ],
+      "description": "Estado operacional padronizado (mesmo vocabulario ja usado em docs/pediatria_service_api.md)."
+    },
+    "captured_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Momento de captura do frame que originou o evento."
+    },
+    "decided_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Momento em que o plugin decidiu o estado (pode diferir de captured_at por latencia de inferencia)."
+    },
+    "published_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Momento de publicacao do evento no barramento local."
+    },
+    "frame_seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "target_context": {
+      "type": "object",
+      "description": "Contexto do(s) alvo(s) envolvidos no evento (a crianca em risco e o adulto de referencia mais proximo, quando existir).",
+      "required": ["targets"],
+      "properties": {
+        "targets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["target_id", "role", "bbox_xyxy", "confidence"],
+            "properties": {
+              "target_id": {
+                "type": "integer",
+                "description": "Track id estavel do alvo (apos estabilizacao de identidade)."
+              },
+              "role": {
+                "type": "string",
+                "enum": ["child", "adult", "uncertain"]
+              },
+              "bbox_xyxy": {
+                "type": "array",
+                "items": { "type": "number" },
+                "minItems": 4,
+                "maxItems": 4
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "state": {
+                "type": "string",
+                "enum": ["ACCOMPANIED", "CHILD_ALONE", "CHILD_SEPARATED", "UNCERTAIN", "NO_CHILD"]
+              },
+              "nearest_adult_target_id": {
+                "type": ["integer", "null"]
+              },
+              "nearest_adult_distance_ratio": {
+                "type": ["number", "null"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "evidence_refs": {
+      "type": "array",
+      "description": "Referencias a evidencia (nao o payload da imagem em si -- evita congestionar o barramento).",
+      "items": {
+        "type": "object",
+        "required": ["kind", "ref"],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["frame", "annotated", "crop", "metadata"]
+          },
+          "ref": {
+            "type": "string",
+            "description": "Caminho ou URI da evidencia."
+          }
+        }
+      }
+    },
+    "device_used": {
+      "type": "string",
+      "description": "Device de inferencia usado (cpu, cuda:0 etc), para diagnostico."
+    },
+    "specialist_classification": {
+      "type": ["object", "null"],
+      "description": "Metadados de decisao do especialista para o alvo selecionado (fonte cache/inferencia, idade do cache, motivo do refresh). Ver docs/pediatria_service_api.md."
+    }
+  },
+  "additionalProperties": true
+}

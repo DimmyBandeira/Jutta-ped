@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "plugin_id": "ia.pediatria",
+  "name": "IA Pediatria",
+  "kind": "ai_video_plugin",
+  "version": "0.1.0",
+  "status": "draft",
+  "description": "Deteccao de crianca desacompanhada por camera: detector de pessoa + especialista adult/child por crop, estabilizacao de identidade e regra de companhia (adulto proximo) com histerese temporal.",
+
+  "inputs": [
+    {
+      "name": "video_stream_ref",
+      "type": "video_stream_ref",
+      "required": true,
+      "description": "Referencia de stream fornecida pelo mainframe (Core), nao um cadastro de camera proprio do plugin. Ver secao 'stream_ref' no README deste diretorio."
+    }
+  ],
+
+  "outputs": [
+    "risk_events",
+    "overlay_bboxes",
+    "target_context",
+    "evidence_refs",
+    "health",
+    "telemetry"
+  ],
+  "optional_outputs": [
+    "annotated_preview_stream"
+  ],
+
+  "runtime": {
+    "type": "local_service",
+    "entrypoint_api": "tools/run_pediatria_service_api.py",
+    "entrypoint_headless_session": "src.jutta_ped.service.runtime:PediatriaHeadlessSession",
+    "session_manager": "src.jutta_ped.service.runtime:PediatriaSessionManager",
+    "note": "O runtime de referencia nesta rodada e a API HTTP local (FastAPI) descrita em docs/pediatria_service_api.md. Integracao formal com o Node Agent / scheduler do WebGuardiao Core (leases, fencing token, heartbeat) ainda nao foi implementada -- fica para uma rodada futura de acordo com o WG Runtime Contract."
+  },
+
+  "ui": {
+    "checkbox_label": "IA Pediatria",
+    "mode": "optional_viewer",
+    "demo_viewer_entrypoint": "tools/run_pediatria_viewer.py",
+    "config_schema_ref": "schemas/ui.schema.json",
+    "note": "A UI empacotada neste repositorio (Demo Viewer, src/jutta_ped/ui/) e apenas apresentacao/debug opcional deste plugin, nao a UI de producao. Quando ativado pelo Core via checkbox, o Core deve renderizar a propria interface de configuracao a partir de schemas/ui.schema.json; a IA continua funcionando sem nenhuma UI."
+  },
+
+  "schemas": {
+    "config": "schemas/config.schema.json",
+    "ui": "schemas/ui.schema.json",
+    "event": "schemas/event.schema.json",
+    "overlay": "schemas/overlay.schema.json"
+  },
+
+  "model_artifacts": [
+    {
+      "artifact_id": "specialist_child_adult",
+      "role": "specialist",
+      "local_dev_path": "src/models/pediatria_child_detector_v6_jutta_openvino_model",
+      "external_artifact": true,
+      "hash_algorithm": null,
+      "hash": null,
+      "origin": "treinado internamente (Jutta-ped); ver historico do projeto para dataset/versoes",
+      "note": "Modelo grande tratado como artefato externo versionado (nao embutido no pacote .wgplugin). Hash/assinatura de integridade ainda nao implementados nesta rodada."
+    },
+    {
+      "artifact_id": "person_detector",
+      "role": "detector",
+      "local_dev_path": "src/models/yolo11n_openvino_model",
+      "external_artifact": true,
+      "hash_algorithm": null,
+      "hash": null,
+      "origin": "YOLO11n (Ultralytics), classe COCO 'person'",
+      "note": "Usado no crop-pipeline: detecta pessoas no frame inteiro antes do especialista classificar cada crop."
+    }
+  ],
+
+  "compatibility": {
+    "mainframe_topologies": ["standalone", "professional", "enterprise"],
+    "l2_cascade": false,
+    "person_only": true,
+    "note": "Nao introduz L2/Cascade; permanece person-only, conforme decisao registrada nas rodadas anteriores."
+  },
+
+  "permissions": {
+    "requires_gpu": false,
+    "requires_network": false,
+    "writes_local_evidence": true,
+    "reads_secrets": false,
+    "note": "Campos planejados pelo WG Plugin Contract (isolamento/permissoes granulares). Ainda nao ha enforcement automatico; hoje o processo roda com os mesmos privilegios do host."
+  },
+
+  "signing": {
+    "status": "not_implemented",
+    "hash_algorithm": null,
+    "hash": null,
+    "signature": null,
+    "note": "Assinatura/hash de distribuicao (.wgplugin) planejados pelo WG Plugin Contract mas nao implementados nesta rodada. Este manifest e consumido hoje como arquivo de repositorio, nao como pacote assinado."
+  },
+
+  "lifecycle": {
+    "install": "not_implemented",
+    "migration": "not_implemented",
+    "rollback": "not_implemented",
+    "note": "Campos planejados para quando este plugin for empacotado como .wgplugin instalavel pelo Core; hoje o deploy e manual (clone do repo + venv)."
+  }
+}

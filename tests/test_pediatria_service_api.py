@@ -112,3 +112,34 @@ def test_disable_unknown_camera_is_a_noop(client: TestClient) -> None:
     response = client.post("/cameras/never_started/disable")
     assert response.status_code == 200
     assert response.json()["active"] is False
+
+
+def test_enable_camera_accepts_stream_ref_instead_of_source(client: TestClient) -> None:
+    response = client.post(
+        "/cameras/enable",
+        json={"stream_ref": "rtsp://camera.local/stream", "camera_id": "entrada_stream_ref"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["camera_id"] == "entrada_stream_ref"
+    assert body["active"] is True
+
+
+def test_camera_enable_request_prefers_stream_ref_over_source_when_both_given() -> None:
+    payload = app_module.CameraEnableRequest(
+        source="C:/videos/legacy.mp4",
+        stream_ref="rtsp://camera.local/preferred",
+    )
+    config = app_module._config_from_camera_request(payload)
+    assert config.source == "rtsp://camera.local/preferred"
+
+
+def test_camera_enable_request_falls_back_to_source_without_stream_ref() -> None:
+    payload = app_module.CameraEnableRequest(source="C:/videos/legacy.mp4")
+    config = app_module._config_from_camera_request(payload)
+    assert config.source == "C:/videos/legacy.mp4"
+
+
+def test_enable_camera_requires_source_or_stream_ref(client: TestClient) -> None:
+    response = client.post("/cameras/enable", json={"camera_id": "sem_fonte"})
+    assert response.status_code == 422

@@ -5,14 +5,12 @@ from types import SimpleNamespace
 import pytest
 import numpy as np
 
-from tools.run_pediatria_popup_mvp import (
+from src.jutta_ped.ui.demo_viewer import (
     PediatriaDatasetCollector,
-    PediatricIdentityStabilizer,
     PediatriaPopupDemo,
     SOURCE_FILE,
     SOURCE_URL,
     SOURCE_USB,
-    WeakChildCandidatePromoter,
     dedupe_detections_by_track,
     draw_popup_alert_bbox,
     resolve_capture_source,
@@ -20,11 +18,13 @@ from tools.run_pediatria_popup_mvp import (
     source_display_name,
 )
 from modulo.pediatria.detector_mvp import PediatricDetection, PediatricsDetectorMvpRunner
+from modulo.pediatria.identity_stabilizer import PediatricIdentityStabilizer
+from modulo.pediatria.weak_child_promoter import WeakChildCandidatePromoter
 from src.jutta_ped.service.telemetry import SessionTelemetry
 
 
 def test_popup_demo_defaults_to_v6_jutta_and_is_standalone() -> None:
-    source = Path("tools/run_pediatria_popup_mvp.py").read_text(encoding="utf-8")
+    source = Path("src/jutta_ped/ui/demo_viewer.py").read_text(encoding="utf-8")
 
     assert "pediatria_child_detector_v6_jutta_openvino_model" in source
     assert "pediatria_child_detector_v6_jutta.pt" in source
@@ -76,7 +76,7 @@ def test_source_display_name_hides_remote_credentials() -> None:
 
 
 def test_report_never_serializes_raw_remote_url() -> None:
-    source = Path("tools/run_pediatria_popup_mvp.py").read_text(encoding="utf-8")
+    source = Path("src/jutta_ped/ui/demo_viewer.py").read_text(encoding="utf-8")
 
     assert '"source": source_display_name(' in source
 
@@ -132,7 +132,7 @@ def test_dedupe_detections_by_track_keeps_highest_confidence() -> None:
 def test_popup_alert_bbox_uses_fixed_alert_color_without_mutating_source(
     monkeypatch,
 ) -> None:
-    import tools.run_pediatria_popup_mvp as popup_tool
+    import src.jutta_ped.ui.demo_viewer as popup_tool
 
     frame = np.zeros((80, 120, 3), dtype=np.uint8)
     original = frame.copy()

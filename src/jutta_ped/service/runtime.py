@@ -179,6 +179,33 @@ def status_final_for(state: Any, detections: list[PediatricDetection], person_de
     return "ANALISANDO"
 
 
+_OVERLAY_LABELS = {"child", "adult", "uncertain"}
+
+
+def build_overlay_objects(detections: list[PediatricDetection], companionship: Any) -> list[dict[str, Any]]:
+    """Traduz as deteccoes resolvidas de um frame para o contrato de overlay
+    (plugin/schemas/overlay.schema.json): um item por alvo, com o estado de
+    companhia do CompanionshipResult quando o alvo e uma crianca avaliada.
+    """
+    child_state_by_track = {
+        child.child_track_id: child.state for child in getattr(companionship, "children", [])
+    }
+    objects: list[dict[str, Any]] = []
+    for item in detections:
+        label = item.role if item.role in _OVERLAY_LABELS else "uncertain"
+        state = child_state_by_track.get(item.track_id, "ANALISANDO") if label == "child" else "ANALISANDO"
+        objects.append(
+            {
+                "target_id": int(item.track_id),
+                "label": label,
+                "bbox_xyxy": [round(float(value), 1) for value in item.bbox_xyxy],
+                "confidence": round(float(item.confidence), 4),
+                "state": state,
+            }
+        )
+    return objects
+
+
 def choose_crop_detection(child: PediatricDetection | None, detections: list[PediatricDetection], person_detections: list[PediatricDetection]) -> PediatricDetection | None:
     if child is not None:
         return child
@@ -191,8 +218,20 @@ def choose_crop_detection(child: PediatricDetection | None, detections: list[Ped
 
 @dataclass(frozen=True)
 class SessionStartConfig:
+    """Configuracao operacional de uma sessao/instancia do plugin.
+
+    `source` e o `source_ref`/`stream_ref` do modelo de plugin (ver
+    plugin/README.md): hoje ainda e um caminho/URL/indice USB recebido
+    diretamente, mas o campo ja e tratado internamente como uma referencia
+    opaca de stream, nao como um cadastro de camera proprio do servico. A
+    camada HTTP (`src/jutta_ped/api/app.py`) ja aceita `stream_ref` como
+    alias preferido de `source` no payload da requisicao.
+    """
+
     source: str | int
     camera_id: str | None = None
+    stream_id: str | None = None
+    lease_id: str | None = None
     force_cpu: bool = False
     modo_coleta: bool = False
     requested_device: str = "auto"
@@ -206,6 +245,8 @@ class SessionState:
     session_id: str
     camera_id: str
     source_redacted: str | int
+    stream_id: str | None = None
+    lease_id: str | None = None
     status: str = "starting"
     status_final: str = "ANALISANDO"
     started_at: str = field(default_factory=lambda: datetime.now().isoformat(timespec="milliseconds"))
@@ -217,6 +258,8 @@ class SessionState:
     evidence_dir: str = ""
     events_log: str = ""
     summary_path: str = ""
+    last_event_at: str | None = None
+    last_frame_at: str | None = None
 
 
 class SimpleAlertLatch:
@@ -245,10 +288,16 @@ class PediatriaHeadlessSession:
             session_id=self.session_id,
             camera_id=self.camera_id,
             source_redacted=redact_source_value(config.source),
+            stream_id=config.stream_id,
+            lease_id=config.lease_id,
             evidence_dir=str(self.evidence_dir),
             events_log=str(self.events_log_path),
             summary_path=str(self.evidence_dir / "session_summary.json"),
         )
+        # Ultimo overlay/bbox conhecido (contrato de plugin, ver
+        # plugin/schemas/overlay.schema.json). So o frame mais recente e
+        # mantido em memoria -- sem historico, sem custo de disco extra.
+        self.last_overlay_frame: dict[str, Any] | None = None
         self.device, self.device_reason = resolve_device(config.force_cpu, config.requested_device)
         perf_overrides = cpu_economical_overrides(self.device)
         self.service = PediatriaService(
@@ -335,8 +384,16 @@ class PediatriaHeadlessSession:
         person_detections = result.person_detections
         self.stable_state_counts[state.stable_state] += 1
         status_final = status_final_for(state, resolved, person_detections)
+        overlay_objects = build_overlay_objects(resolved, state)
+        captured_at = datetime.now().isoformat(timespec="milliseconds")
         with self.lock:
             self.state.status_final = status_final
+            self.state.last_frame_at = captured_at
+            self.last_overlay_frame = {
+                "frame_seq": frame_id,
+                "captured_at": captured_at,
+                "objects": overlay_objects,
+            }
         if frame_id % max(1, self.config.diagnostic_log_interval_frames) == 0:
             paths, errors = self._save_event_evidence("frame_diagnostic", clean_frame, state, None, resolved, person_detections, False, None)
             payload = self._event_payload("frame_diagnostic", state, None, resolved, person_detections, paths, errors, False, None)
@@ -461,8 +518,42 @@ class PediatriaHeadlessSession:
         }
 
     def _append_event(self, payload: dict[str, Any]) -> None:
+        with self.lock:
+            self.state.last_event_at = payload.get("timestamp") or datetime.now().isoformat(timespec="milliseconds")
         self._record_summary(payload)
         self._append_events_jsonl_line(payload)
+
+    def recent_events(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Cauda do events.jsonl da sessao, parseada linha a linha.
+
+        Reaproveita o log ja escrito por `_append_events_jsonl_line` -- nao
+        cria um segundo canal de eventos so para o contrato de plugin.
+        """
+        if not self.events_log_path.exists():
+            return []
+        lines = self.events_log_path.read_text(encoding="utf-8").splitlines()
+        events: list[dict[str, Any]] = []
+        for line in lines[-max(limit, 1):]:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                events.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        return events
+
+    def telemetry_snapshot(self) -> dict[str, Any]:
+        with self.lock:
+            frames_processed = self.state.frames_processed
+        crop_pipeline = getattr(self.service, "crop_pipeline", None)
+        return {
+            "resources": self.telemetry.resources_snapshot(),
+            "performance": self.telemetry.performance_snapshot(
+                frames_processed=frames_processed,
+                extra=crop_pipeline.timing_snapshot() if crop_pipeline is not None else None,
+            ),
+        }
 
     def _append_session_log(self, payload: dict[str, Any]) -> None:
         item = {"created_at": datetime.now().isoformat(timespec="milliseconds"), **payload}
@@ -552,17 +643,17 @@ class PediatriaHeadlessSession:
 
 
 def _load_person_crop_pipeline(*args: Any, **kwargs: Any) -> Any:
-    from tools.run_pediatria_popup_mvp import PersonCropSpecialistPipeline
+    from modulo.pediatria.crop_pipeline import PersonCropSpecialistPipeline
     return PersonCropSpecialistPipeline(*args, **kwargs)
 
 
 def _load_identity_stabilizer() -> Any:
-    from tools.run_pediatria_popup_mvp import PediatricIdentityStabilizer
+    from modulo.pediatria.identity_stabilizer import PediatricIdentityStabilizer
     return PediatricIdentityStabilizer()
 
 
 def _load_weak_child_promoter() -> Any:
-    from tools.run_pediatria_popup_mvp import WeakChildCandidatePromoter
+    from modulo.pediatria.weak_child_promoter import WeakChildCandidatePromoter
     return WeakChildCandidatePromoter(min_hits=12)
 
 
@@ -599,6 +690,75 @@ def camera_status_payload(status: dict[str, Any]) -> dict[str, Any]:
         "last_error": status.get("last_error"),
         "started_at": status.get("started_at"),
         "stopped_at": status.get("stopped_at"),
+    }
+
+
+PLUGIN_ID = "ia.pediatria"
+
+# Estados operacionais minimos do contrato de instancia de plugin (ver
+# plugin/manifest.json / plugin/README.md). "stopping" e "degraded" estao
+# previstos no contrato mas o runtime atual e sincrono o bastante para nao
+# os observar hoje (stop() bloqueia ate a thread terminar antes de retornar).
+_INSTANCE_STATES = {"starting", "running", "degraded", "stopping", "stopped", "error"}
+_SESSION_STATUS_TO_INSTANCE_STATE = {
+    "starting": "starting",
+    "running": "running",
+    "stopped": "stopped",
+    "finished": "stopped",
+    "error": "error",
+}
+_ANALYSIS_STATES = {
+    "ANALISANDO",
+    "SEM_PESSOA",
+    "UNCERTAIN",
+    "NO_CHILD",
+    "CRIANCA_ACOMPANHADA",
+    "CRIANCA_DESACOMPANHADA",
+    "ERROR",
+}
+
+
+def instance_state_from_session(status: dict[str, Any]) -> str:
+    if status.get("last_error"):
+        return "error"
+    raw = str(status.get("status") or "starting").lower()
+    return _SESSION_STATUS_TO_INSTANCE_STATE.get(raw, "running")
+
+
+def instance_health_from_state(state: str) -> str:
+    if state == "error":
+        return "unhealthy"
+    if state in {"starting", "stopping"}:
+        return "degraded"
+    return "healthy"
+
+
+def analysis_state_from_session(status: dict[str, Any]) -> str:
+    if status.get("last_error"):
+        return "ERROR"
+    value = str(status.get("status_final") or "ANALISANDO")
+    return value if value in _ANALYSIS_STATES else "ANALISANDO"
+
+
+def instance_status_payload(status: dict[str, Any]) -> dict[str, Any]:
+    """Formato padronizado de status de instancia (criterio 4 desta rodada).
+
+    Recebe o mesmo dict que `PediatriaHeadlessSession.status()` retorna (mais
+    a chave opcional "telemetry", injetada por quem chama) e projeta nos
+    campos minimos do contrato de plugin.
+    """
+    state = instance_state_from_session(status)
+    return {
+        "plugin_id": PLUGIN_ID,
+        "instance_id": status.get("session_id"),
+        "camera_id": status.get("camera_id"),
+        "stream_id": status.get("stream_id"),
+        "state": state,
+        "health": instance_health_from_state(state),
+        "analysis_state": analysis_state_from_session(status),
+        "last_event_at": status.get("last_event_at"),
+        "last_frame_at": status.get("last_frame_at"),
+        "telemetry": status.get("telemetry") or {},
     }
 
 
@@ -648,6 +808,8 @@ class PediatriaSessionManager:
             SessionStartConfig(
                 source=config.source,
                 camera_id=camera_id,
+                stream_id=config.stream_id,
+                lease_id=config.lease_id,
                 force_cpu=config.force_cpu,
                 modo_coleta=config.modo_coleta,
                 requested_device=config.requested_device,
@@ -708,6 +870,67 @@ class PediatriaSessionManager:
         with self._lock:
             camera_ids = sorted(self._camera_sessions)
         return [self.camera_status(camera_id) for camera_id in camera_ids]
+
+    # -- Contrato de instancia de plugin (instance_id == session_id hoje;
+    #    ver plugin/README.md) -- reaproveita as sessoes/cameras acima, so
+    #    projeta a saida no formato padronizado do contrato.
+
+    def instance_status(self, instance_id: str) -> dict[str, Any]:
+        session = self._get(instance_id)
+        status = session.status()
+        telemetry_getter = getattr(session, "telemetry_snapshot", None)
+        status["telemetry"] = telemetry_getter() if callable(telemetry_getter) else {}
+        return instance_status_payload(status)
+
+    def instances(self) -> list[dict[str, Any]]:
+        with self._lock:
+            session_ids = list(self._sessions.keys())
+        return [self.instance_status(session_id) for session_id in session_ids]
+
+    def overlay_latest(self, instance_id: str) -> dict[str, Any]:
+        session = self._get(instance_id)
+        status = session.status()
+        now = datetime.now()
+        frame = getattr(session, "last_overlay_frame", None)
+        if frame is None:
+            return {
+                "type": "overlay_bboxes",
+                "plugin_id": PLUGIN_ID,
+                "instance_id": status.get("session_id"),
+                "camera_id": status.get("camera_id"),
+                "stream_id": status.get("stream_id"),
+                "frame_seq": 0,
+                "captured_at": now.isoformat(timespec="milliseconds"),
+                "frame_age_ms": None,
+                "objects": [],
+            }
+        frame_age_ms: float | None
+        try:
+            frame_age_ms = max(0.0, (now - datetime.fromisoformat(frame["captured_at"])).total_seconds() * 1000.0)
+        except ValueError:
+            frame_age_ms = None
+        return {
+            "type": "overlay_bboxes",
+            "plugin_id": PLUGIN_ID,
+            "instance_id": status.get("session_id"),
+            "camera_id": status.get("camera_id"),
+            "stream_id": status.get("stream_id"),
+            "frame_seq": frame["frame_seq"],
+            "captured_at": frame["captured_at"],
+            "frame_age_ms": frame_age_ms,
+            "objects": frame["objects"],
+        }
+
+    def events(self, instance_id: str, *, limit: int = 50, event_type: str | None = None) -> list[dict[str, Any]]:
+        session = self._get(instance_id)
+        recent_events_getter = getattr(session, "recent_events", None)
+        if not callable(recent_events_getter):
+            return []
+        safe_limit = max(1, min(int(limit), 500))
+        raw = recent_events_getter(limit=safe_limit * 5 if event_type else safe_limit)
+        if event_type:
+            raw = [item for item in raw if item.get("event_type") == event_type]
+        return raw[-safe_limit:]
 
     def _get(self, session_id: str) -> PediatriaHeadlessSession:
         with self._lock:

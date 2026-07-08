@@ -1,9 +1,6 @@
+from modulo.pediatria.crop_pipeline import PersonCropSpecialistPipeline, TrackClassificationState
 from modulo.pediatria.detector_mvp import PediatricDetection
-from src.jutta_ped.service.telemetry import RunningStat
-from tools.run_pediatria_popup_mvp import (
-    PersonCropSpecialistPipeline,
-    TrackClassificationState,
-)
+from modulo.pediatria.metrics import RunningStat
 
 
 def _make_pipeline() -> PersonCropSpecialistPipeline:
@@ -200,7 +197,7 @@ def test_detect_and_classify_reduces_specialist_calls_for_a_stable_track(monkeyp
 
     monkeypatch.setattr(pipeline, "_classify_crop", fake_classify_crop)
     monkeypatch.setattr(
-        "tools.run_pediatria_popup_mvp.crop_frame",
+        "modulo.pediatria.crop_pipeline.crop_frame",
         lambda frame, bbox: object(),
     )
 
@@ -226,7 +223,7 @@ def test_detect_and_classify_populates_last_trace_with_source_and_reason(monkeyp
     fixed_person = _person()
     monkeypatch.setattr(pipeline, "_parse_person_result", lambda result: [fixed_person])
     monkeypatch.setattr(pipeline, "_classify_crop", lambda crop, **kwargs: ("adult", 0.9))
-    monkeypatch.setattr("tools.run_pediatria_popup_mvp.crop_frame", lambda frame, bbox: object())
+    monkeypatch.setattr("modulo.pediatria.crop_pipeline.crop_frame", lambda frame, bbox: object())
     pipeline.person_model = type("FakeModel", (), {"track": lambda self, *a, **k: [None]})()
 
     pipeline.detect_and_classify(
@@ -256,7 +253,7 @@ def test_detector_stride_skips_person_model_track_on_intermediate_frames(monkeyp
     fixed_person = _person()
     monkeypatch.setattr(pipeline, "_parse_person_result", lambda result: [fixed_person])
     monkeypatch.setattr(pipeline, "_classify_crop", lambda crop, **kwargs: ("adult", 0.9))
-    monkeypatch.setattr("tools.run_pediatria_popup_mvp.crop_frame", lambda frame, bbox: object())
+    monkeypatch.setattr("modulo.pediatria.crop_pipeline.crop_frame", lambda frame, bbox: object())
 
     track_calls: list[int] = []
     pipeline.person_model = _fake_model(track_calls)
@@ -283,7 +280,7 @@ def test_specialist_budget_limits_calls_and_defers_the_rest(monkeypatch) -> None
     people = [_person(track_id=i, bbox=(i * 200.0, 100.0, i * 200.0 + 60.0, 260.0)) for i in range(1, 6)]
     monkeypatch.setattr(pipeline, "_parse_person_result", lambda result: people)
     monkeypatch.setattr(pipeline, "_classify_crop", lambda crop, **kwargs: ("adult", 0.9))
-    monkeypatch.setattr("tools.run_pediatria_popup_mvp.crop_frame", lambda frame, bbox: object())
+    monkeypatch.setattr("modulo.pediatria.crop_pipeline.crop_frame", lambda frame, bbox: object())
     pipeline.person_model = _fake_model([])
 
     pipeline.detect_and_classify(
@@ -325,7 +322,7 @@ def test_priority_track_ids_win_budget_over_plain_new_tracks(monkeypatch) -> Non
     ]
     monkeypatch.setattr(pipeline, "_parse_person_result", lambda result: people)
     monkeypatch.setattr(pipeline, "_classify_crop", lambda crop, **kwargs: ("adult", 0.9))
-    monkeypatch.setattr("tools.run_pediatria_popup_mvp.crop_frame", lambda frame, bbox: object())
+    monkeypatch.setattr("modulo.pediatria.crop_pipeline.crop_frame", lambda frame, bbox: object())
     pipeline.person_model = _fake_model([])
 
     pipeline.detect_and_classify(
