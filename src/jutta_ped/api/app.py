@@ -47,7 +47,30 @@ class _SourceRefMixin(BaseModel):
         return self.stream_ref if self.stream_ref is not None else self.source  # type: ignore[return-value]
 
 
-class StartSessionRequest(_SourceRefMixin):
+_VIDEO_END_POLICIES = {"stop", "loop"}
+
+
+class _ReconnectPolicyMixin(BaseModel):
+    """Politica de recuperacao de falha de leitura da fonte (ver
+    `classify_source_kind`/`_handle_read_failure` em runtime.py). Defaults
+    preservam o comportamento anterior a esta rodada: reconexao automatica
+    ligada para RTSP/USB, arquivo local para (sem loop) no EOF.
+    """
+
+    reconnect_enabled: bool = Field(default=True, description="Reconectar automaticamente fontes de rede/dispositivo (RTSP/HTTP/USB) quando a leitura falhar.")
+    max_reconnect_attempts: int = Field(default=5, ge=-1, le=100, description="-1 = tentativas ilimitadas.")
+    reconnect_backoff_seconds: float = Field(default=2.0, ge=0.1, le=120.0, description="Backoff inicial entre tentativas; dobra a cada tentativa ate o teto abaixo.")
+    reconnect_backoff_max_seconds: float = Field(default=30.0, ge=0.1, le=600.0)
+    video_end_policy: str = Field(default="stop", description="So se aplica a arquivo local: 'stop' (padrao, encerra no EOF) ou 'loop' (reinicia do frame 0).")
+
+    @model_validator(mode="after")
+    def _validate_video_end_policy(self) -> "_ReconnectPolicyMixin":
+        if self.video_end_policy not in _VIDEO_END_POLICIES:
+            raise ValueError("video_end_policy deve ser 'stop' ou 'loop'.")
+        return self
+
+
+class StartSessionRequest(_SourceRefMixin, _ReconnectPolicyMixin):
     camera_id: str | None = Field(default=None, description="Nome operacional da camera.")
     force_cpu: bool = False
     modo_coleta: bool = False
@@ -57,7 +80,7 @@ class StartSessionRequest(_SourceRefMixin):
     report_dir: str | None = Field(default=None, description="Diretorio de saida operacional.")
 
 
-class CameraEnableRequest(_SourceRefMixin):
+class CameraEnableRequest(_SourceRefMixin, _ReconnectPolicyMixin):
     camera_id: str | None = Field(default=None, description="Nome operacional da camera.")
     force_cpu: bool = False
     modo_coleta: bool = False
@@ -70,7 +93,7 @@ class CameraEnableRequest(_SourceRefMixin):
 _DATASET_COLLECTION_MODES = {"coleta", "coleta_dataset", "dataset_collection", "collect"}
 
 
-class InstanceConfig(BaseModel):
+class InstanceConfig(_ReconnectPolicyMixin):
     """Bloco `config` do contrato de instancia (POST /instances).
 
     Espelha os campos operacionais ja existentes em StartSessionRequest/
@@ -115,6 +138,11 @@ def _config_from_instance_request(payload: InstanceStartRequest) -> SessionStart
         report_dir=Path(payload.config.report_dir) if payload.config.report_dir else SessionStartConfig.report_dir,
         diagnostic_log_interval_frames=payload.config.diagnostic_log_interval_frames,
         cooldown_seconds=payload.config.cooldown_seconds,
+        reconnect_enabled=payload.config.reconnect_enabled,
+        max_reconnect_attempts=payload.config.max_reconnect_attempts,
+        reconnect_backoff_seconds=payload.config.reconnect_backoff_seconds,
+        reconnect_backoff_max_seconds=payload.config.reconnect_backoff_max_seconds,
+        video_end_policy=payload.config.video_end_policy,
     )
 
 
@@ -128,6 +156,11 @@ def _config_from_camera_request(payload: CameraEnableRequest) -> SessionStartCon
         report_dir=Path(payload.report_dir) if payload.report_dir else SessionStartConfig.report_dir,
         diagnostic_log_interval_frames=payload.diagnostic_log_interval_frames,
         cooldown_seconds=payload.cooldown_seconds,
+        reconnect_enabled=payload.reconnect_enabled,
+        max_reconnect_attempts=payload.max_reconnect_attempts,
+        reconnect_backoff_seconds=payload.reconnect_backoff_seconds,
+        reconnect_backoff_max_seconds=payload.reconnect_backoff_max_seconds,
+        video_end_policy=payload.video_end_policy,
     )
 
 
@@ -148,6 +181,11 @@ def start_session(payload: StartSessionRequest) -> dict[str, Any]:
             report_dir=Path(payload.report_dir) if payload.report_dir else SessionStartConfig.report_dir,
             diagnostic_log_interval_frames=payload.diagnostic_log_interval_frames,
             cooldown_seconds=payload.cooldown_seconds,
+            reconnect_enabled=payload.reconnect_enabled,
+            max_reconnect_attempts=payload.max_reconnect_attempts,
+            reconnect_backoff_seconds=payload.reconnect_backoff_seconds,
+            reconnect_backoff_max_seconds=payload.reconnect_backoff_max_seconds,
+            video_end_policy=payload.video_end_policy,
         )
         return manager.start_session(config)
     except Exception as exc:

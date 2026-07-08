@@ -1,13 +1,14 @@
-"""Popup de alerta pediatrico local, isolado do WebGuardiao principal."""
+﻿"""Popup de alerta pediatrico local, isolado do WebGuardiao principal."""
 from __future__ import annotations
 
 import time
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtGui import QColor, QPixmap
 from PyQt6.QtWidgets import (
     QDialog,
     QFrame,
+    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -75,37 +76,82 @@ class PediatriaAlertPopup(QDialog):
 
     _STYLE = """
         QDialog {
-            background-color: #120000;
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                stop:0 #020814, stop:0.55 #061322, stop:1 #020814);
+            color: #eef5ff;
+            font-family: Segoe UI, Arial, sans-serif;
+        }
+        QFrame#popupCard {
+            background: rgba(4, 14, 28, 230);
+            border: 1px solid rgba(84, 150, 214, 170);
+            border-radius: 18px;
+        }
+        QLabel#brand {
+            color: #f5f8ff;
+            font-size: 18px;
+            font-weight: 900;
+        }
+        QLabel#moduleBadge {
+            color: #13aaff;
+            border: 1px solid rgba(0, 157, 255, 120);
+            border-radius: 13px;
+            padding: 5px 10px;
+            background: rgba(0, 120, 255, 25);
+            font-weight: 700;
+        }
+        QLabel#severity {
+            color: #ffcc66;
+            background: rgba(255, 159, 28, 32);
+            border: 1px solid rgba(255, 190, 90, 130);
+            border-radius: 10px;
+            padding: 6px 10px;
+            font-size: 12px;
+            font-weight: 800;
         }
         QLabel#title {
-            color: #FF4040;
-            font-size: 17px;
-            font-weight: bold;
+            color: #f5f8ff;
+            font-size: 21px;
+            font-weight: 900;
+        }
+        QLabel#subtitle {
+            color: #b9c6d6;
+            font-size: 13px;
         }
         QLabel#info {
-            color: #EEEEEE;
+            color: #dfeaf6;
+            background: rgba(2, 10, 22, 150);
+            border: 1px solid rgba(71, 105, 140, 135);
+            border-radius: 12px;
+            padding: 12px 14px;
             font-size: 13px;
-            line-height: 160%;
+            line-height: 150%;
         }
         QLabel#badge {
-            color: #666666;
+            color: #9caec2;
             font-size: 10px;
         }
+        QLabel#evidence {
+            background: #02070d;
+            border: 1px solid rgba(0, 157, 255, 150);
+            border-radius: 12px;
+            padding: 4px;
+        }
         QPushButton {
-            background-color: #CC2222;
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 #008cff, stop:1 #0752c9);
             color: #FFFFFF;
-            border: none;
-            padding: 10px 36px;
+            border: 1px solid #209bff;
+            padding: 8px 28px;
             font-size: 13px;
-            font-weight: bold;
-            border-radius: 4px;
-            min-width: 180px;
+            font-weight: 800;
+            border-radius: 8px;
+            min-width: 170px;
+            min-height: 30px;
         }
         QPushButton:hover {
-            background-color: #EE3333;
+            background: #009dff;
         }
     """
-
     def __init__(
         self,
         parent=None,
@@ -129,35 +175,71 @@ class PediatriaAlertPopup(QDialog):
     def _build_ui(self) -> None:
         from datetime import datetime
 
-        self.setWindowTitle("ATENCAO PEDIATRIA")
+        self.setWindowTitle("WebGuardiao - IA Pediatria")
         self.setWindowFlags(
             Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Dialog
         )
-        self.setMinimumWidth(
-            720 if self.evidence_pixmap is not None or self.crop_pixmap is not None else 420
-        )
+        has_images = self.evidence_pixmap is not None or self.crop_pixmap is not None
+        self.setMinimumWidth(760 if has_images else 500)
         self.setStyleSheet(self._STYLE)
 
-        layout = QVBoxLayout(self)
-        layout.setSpacing(16)
-        layout.setContentsMargins(32, 32, 32, 28)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(18, 18, 18, 18)
+        root.setSpacing(0)
+
+        card = QFrame()
+        card.setObjectName("popupCard")
+        shadow = QGraphicsDropShadowEffect(card)
+        shadow.setBlurRadius(32)
+        shadow.setOffset(0, 0)
+        shadow.setColor(QColor(0, 160, 255, 60))
+        card.setGraphicsEffect(shadow)
+        root.addWidget(card)
+
+        layout = QVBoxLayout(card)
+        layout.setSpacing(14)
+        layout.setContentsMargins(24, 22, 24, 20)
+
+        header = QHBoxLayout()
+        brand = QLabel(
+            '<span style="color:#00a7ff;">WEB</span>'
+            '<span style="color:#f5f8ff;">GUARDIAO</span>'
+        )
+        brand.setObjectName("brand")
+        header.addWidget(brand)
+        header.addStretch(1)
+        module = QLabel("IA Pediatria")
+        module.setObjectName("moduleBadge")
+        header.addWidget(module)
+        layout.addLayout(header)
 
         title_text = (
-            "ATENCAO: CRIANÇA SE AFASTANDO DO ACOMPANHANTE"
+            "Crianca se afastando do acompanhante"
             if self.alert_state == "CHILD_SEPARATED"
-            else "ATENCAO: POSSIVEL CRIANÇA DESACOMPANHADA"
+            else "Possivel crianca desacompanhada"
         )
+        severity = QLabel("ALERTA OPERACIONAL")
+        severity.setObjectName("severity")
+        severity.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(severity, alignment=Qt.AlignmentFlag.AlignHCenter)
+
         title = QLabel(title_text)
         title.setObjectName("title")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
+        subtitle = QLabel("Revise a evidencia visual antes de qualquer acao.")
+        subtitle.setObjectName("subtitle")
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(subtitle)
+
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet("background-color: #882222; max-height: 1px;")
+        sep.setStyleSheet("color: rgba(0, 157, 255, 95); max-height: 1px;")
         layout.addWidget(sep)
 
         evidence_row = QHBoxLayout()
+        evidence_row.setSpacing(12)
         if self.evidence_pixmap is not None and not self.evidence_pixmap.isNull():
             evidence = self._image_label(
                 self.evidence_pixmap,
@@ -178,24 +260,22 @@ class PediatriaAlertPopup(QDialog):
             layout.addLayout(evidence_row)
 
         info = QLabel(
-            f"  Camera:      {self.camera_id}\n"
-            f"  Evidencia:   pessoa em analise #{self.track_id}\n"
-            f"  Horario:     {datetime.now().strftime('%H:%M:%S')}\n"
-            f"  Confianca:   {self.confidence:.0%}\n\n"
-            "  Verifique a cena antes de tomar qualquer acao."
+            f"Camera: {self.camera_id}\n"
+            f"Pessoa em analise: #{self.track_id}\n"
+            f"Horario: {datetime.now().strftime('%H:%M:%S')}\n"
+            f"Confianca: {self.confidence:.0%}"
         )
         info.setObjectName("info")
         layout.addWidget(info)
 
-        btn = QPushButton("Confirmar visualizacao")
+        btn = QPushButton("Entendi, fechar alerta")
         btn.clicked.connect(self.accept)
         layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        badge = QLabel("DIAGNOSTICO LOCAL - nao conectado ao WebGuardiao")
+        badge = QLabel("Demo Viewer local - evidencia registrada na sessao")
         badge.setObjectName("badge")
         badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(badge)
-
     @staticmethod
     def _image_label(
         pixmap: QPixmap,
@@ -208,8 +288,7 @@ class PediatriaAlertPopup(QDialog):
         label.setAccessibleName(accessible_name)
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         label.setMinimumSize(width, height)
-        label.setStyleSheet(
-            "background-color: #050505; border: 1px solid #772222;")
+
         label.setPixmap(
             pixmap.scaled(
                 width,
@@ -219,3 +298,5 @@ class PediatriaAlertPopup(QDialog):
             )
         )
         return label
+
+

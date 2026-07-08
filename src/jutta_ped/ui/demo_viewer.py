@@ -31,14 +31,16 @@ from typing import Any, Callable
 from urllib.parse import urlsplit, urlunsplit
 
 import cv2
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QImage, QPixmap
+from PyQt6.QtCore import QPoint, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QImage, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
+    QGraphicsDropShadowEffect,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -48,6 +50,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSpinBox,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -618,6 +621,9 @@ class PediatriaPopupDemo(QMainWindow):
         dataset_max_crops_per_track: int = 40,
     ) -> None:
         super().__init__()
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self._drag_offset: QPoint | None = None
         self.model_path = model
         self.person_model_path = person_model or DEFAULT_PERSON_MODEL_PATH
         self.report_path = report
@@ -646,6 +652,15 @@ class PediatriaPopupDemo(QMainWindow):
         self._loaded_person_model_path: Path | None = None
         self.capture: Any | None = None
         self.current_source: str | int | None = None
+        # Reconexao automatica para fontes de rede/dispositivo (RTSP/HTTP/USB)
+        # quando capture.read() falha (queda de rede, camera reiniciando,
+        # etc.) -- nao se aplica a arquivo local, que so chega aqui em EOF
+        # real e continua fazendo loop como antes.
+        self._reconnecting = False
+        self._reconnect_attempts = 0
+        self._reconnect_max_attempts = 5
+        self._reconnect_backoff_seconds = 2.0
+        self._reconnect_backoff_max_seconds = 30.0
         self.analyzer = CompanionshipAnalyzer()
         self.role_adjuster = PediatricRoleContextAdjuster()
         self.identity_stabilizer = PediatricIdentityStabilizer()
@@ -685,13 +700,17 @@ class PediatriaPopupDemo(QMainWindow):
         self._service_poll_timer.setSingleShot(True)
         self._service_poll_timer.timeout.connect(self._poll_service_startup)
         self._service_check_done.connect(lambda callback, running: callback(running))
+        self._reconnect_timer = QTimer(self)
+        self._reconnect_timer.setSingleShot(True)
+        self._reconnect_timer.timeout.connect(self._attempt_reconnect_capture)
 
         self._build_ui(initial_source)
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._next_frame)
-        self.setWindowTitle("Pediatria Local - apresentacao")
-        self.resize(1280, 760)
+        self.setWindowTitle("WebGuardiao IA Pediatria - Demo Viewer")
+        self.setMinimumSize(980, 600)
+        self.resize(1180, 700)
 
         self._service_startup_timer.start(200)
 
@@ -699,48 +718,271 @@ class PediatriaPopupDemo(QMainWindow):
         return self.report_path.parent / "evidence" / "sessions" / self.session_id
 
     def _build_ui(self, initial_source: str) -> None:
-        central = QWidget()
-        layout = QVBoxLayout(central)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
+        self.stack = QStackedWidget()
+        self.stack.setObjectName("pageStack")
+        self.login_page = self._build_login_page()
+        self.viewer_page = self._build_viewer_page(initial_source)
+        self.stack.addWidget(self.login_page)
+        self.stack.addWidget(self.viewer_page)
+        self.setCentralWidget(self.stack)
+        self._update_source_controls(self.source_mode.currentText())
 
-        title = QLabel("Pediatria Local")
-        title.setStyleSheet("font-size: 16px; font-weight: bold;")
-        layout.addWidget(title)
+    def _build_login_page(self) -> QWidget:
+        page = QWidget()
+        page.setObjectName("loginRoot")
+        page.setStyleSheet(self._showroom_stylesheet())
 
-        service_row = QHBoxLayout()
-        self.service_status_label = QLabel("Servico local: verificando...")
-        self.service_status_label.setStyleSheet("color: #888;")
-        self.service_button = QPushButton("Iniciar servico")
+        root = QVBoxLayout(page)
+        root.setContentsMargins(14, 14, 14, 14)
+        root.setSpacing(0)
+
+        shell = QFrame()
+        shell.setObjectName("loginShell")
+        shell_shadow = QGraphicsDropShadowEffect(shell)
+        shell_shadow.setBlurRadius(42)
+        shell_shadow.setOffset(0, 0)
+        shell_shadow.setColor(QColor(0, 160, 255, 52))
+        shell.setGraphicsEffect(shell_shadow)
+        root.addWidget(shell, 1)
+
+        shell_layout = QVBoxLayout(shell)
+        shell_layout.setContentsMargins(18, 14, 18, 18)
+        shell_layout.setSpacing(10)
+
+        header_frame = QFrame()
+        header_frame.setObjectName("windowHeader")
+        self.login_drag_header = header_frame
+        header = QHBoxLayout(header_frame)
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(14)
+        logo = QLabel(
+            '<span style="font-size:22px;font-weight:800;color:#eaf4ff;">DSA</span>'
+            '<span style="font-size:22px;font-weight:800;color:#00a7ff;">WEB</span><br>'
+            '<span style="font-size:8px;letter-spacing:5px;color:#9aa8b8;">SOLUCOES</span>'
+        )
+        logo.setObjectName("brandLogo")
+        header.addWidget(logo)
+        header.addStretch(1)
+        section = QLabel("IA Pediatria")
+        section.setObjectName("topAccent")
+        header.addWidget(section)
+        divider = QFrame()
+        divider.setFrameShape(QFrame.Shape.VLine)
+        divider.setObjectName("topDivider")
+        header.addWidget(divider)
+        demo = QLabel("Demo Viewer")
+        demo.setObjectName("topText")
+        header.addWidget(demo)
+        self.login_minimize_button = QPushButton("-")
+        self.login_minimize_button.setObjectName("windowButton")
+        self.login_minimize_button.setFixedSize(32, 28)
+        self.login_minimize_button.clicked.connect(self.showMinimized)
+        header.addWidget(self.login_minimize_button)
+        self.login_close_button = QPushButton("X")
+        self.login_close_button.setObjectName("closeButton")
+        self.login_close_button.setFixedSize(32, 28)
+        self.login_close_button.clicked.connect(self.close)
+        header.addWidget(self.login_close_button)
+        shell_layout.addWidget(header_frame)
+        body = QHBoxLayout()
+        body.setContentsMargins(10, 10, 10, 0)
+        body.setSpacing(34)
+        shell_layout.addLayout(body, 1)
+
+        left = QVBoxLayout()
+        left.setSpacing(18)
+        left.addStretch(1)
+        title = QLabel(
+            '<span style="color:#008dff;">WEB</span>'
+            '<span style="color:#f5f8ff;">GUARDIAO</span>'
+        )
+        title.setObjectName("heroTitle")
+        subtitle = QLabel("Inteligencia Artificial para\nMonitoramento e Protecao")
+        subtitle.setObjectName("heroSubtitle")
+        left.addWidget(title)
+        left.addWidget(subtitle)
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setObjectName("heroLine")
+        left.addWidget(line)
+        left.addWidget(self._feature_row("AI", "Monitoramento Inteligente", "Deteccao avancada de eventos e comportamentos em tempo real."))
+        left.addWidget(self._feature_row("CV", "IA Especializada", "Modelos dedicados para cada cenario e necessidade."))
+        left.addWidget(self._feature_row("!", "Alertas em Tempo Real", "Notificacoes instantaneas para acao imediata."))
+        left.addWidget(self._feature_row("BI", "Analytics e Relatorios", "Dashboards completos para melhor tomada de decisao."))
+        left.addStretch(2)
+        badge = QLabel("  Solucao completa para ambientes corporativos e criticos.")
+        badge.setObjectName("bottomBadge")
+        left.addWidget(badge)
+        body.addLayout(left, 1)
+
+        card = QFrame()
+        card.setObjectName("loginCard")
+        card.setMinimumWidth(390)
+        card.setMaximumWidth(460)
+        shadow = QGraphicsDropShadowEffect(card)
+        shadow.setBlurRadius(34)
+        shadow.setOffset(0, 0)
+        shadow.setColor(QColor(0, 160, 255, 65))
+        card.setGraphicsEffect(shadow)
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(34, 28, 34, 24)
+        card_layout.setSpacing(12)
+
+        shield = QLabel("IA")
+        shield.setObjectName("shieldMark")
+        shield.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(shield, alignment=Qt.AlignmentFlag.AlignHCenter)
+
+        card_title = QLabel("Acesso ao Sistema")
+        card_title.setObjectName("cardTitle")
+        card_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(card_title)
+        card_subtitle = QLabel("Faca login para continuar")
+        card_subtitle.setObjectName("cardSubtitle")
+        card_subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(card_subtitle)
+
+        user_label = QLabel("Usuario")
+        user_label.setObjectName("fieldLabel")
+        self.login_user_value = QLineEdit()
+        self.login_user_value.setObjectName("loginField")
+        self.login_user_value.setPlaceholderText("Digite seu usuario")
+        pass_label = QLabel("Senha")
+        pass_label.setObjectName("fieldLabel")
+        self.login_password_value = QLineEdit()
+        self.login_password_value.setObjectName("loginField")
+        self.login_password_value.setPlaceholderText("Digite sua senha")
+        self.login_password_value.setEchoMode(QLineEdit.EchoMode.Password)
+        self.login_password_value.returnPressed.connect(self._login_to_viewer)
+        card_layout.addSpacing(6)
+        card_layout.addWidget(user_label)
+        card_layout.addWidget(self.login_user_value)
+        card_layout.addWidget(pass_label)
+        card_layout.addWidget(self.login_password_value)
+        self.login_error_label = QLabel("")
+        self.login_error_label.setObjectName("loginError")
+        self.login_error_label.setVisible(False)
+        card_layout.addWidget(self.login_error_label)
+
+        options = QHBoxLayout()
+        self.remember_checkbox = QCheckBox("Lembrar-me")
+        self.remember_checkbox.setObjectName("rememberCheck")
+        forgot = QLabel("Esqueci minha senha")
+        forgot.setObjectName("linkLabel")
+        options.addWidget(self.remember_checkbox)
+        options.addStretch(1)
+        options.addWidget(forgot)
+        card_layout.addLayout(options)
+
+        self.login_button = QPushButton("Entrar")
+        self.login_button.setObjectName("primaryButton")
+        self.login_button.clicked.connect(self._login_to_viewer)
+        card_layout.addWidget(self.login_button)
+
+        separator = QHBoxLayout()
+        line_left = QFrame()
+        line_left.setFrameShape(QFrame.Shape.HLine)
+        line_left.setObjectName("cardLine")
+        line_right = QFrame()
+        line_right.setFrameShape(QFrame.Shape.HLine)
+        line_right.setObjectName("cardLine")
+        or_label = QLabel("ou")
+        or_label.setObjectName("orLabel")
+        separator.addWidget(line_left)
+        separator.addWidget(or_label)
+        separator.addWidget(line_right)
+        card_layout.addLayout(separator)
+
+        self.demo_access_button = QPushButton("Acesso Rapido (Demo)")
+        self.demo_access_button.setObjectName("secondaryButton")
+        self.demo_access_button.clicked.connect(self._enter_viewer)
+        card_layout.addWidget(self.demo_access_button)
+        card_layout.addStretch(1)
+        footer = QLabel("© 2026 DSAWEB Solucoes. Todos os direitos reservados.")
+        footer.setObjectName("cardFooter")
+        footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(footer)
+        body.addWidget(card, 0, Qt.AlignmentFlag.AlignVCenter)
+        return page
+
+    def _feature_row(self, icon: str, title: str, description: str) -> QWidget:
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(14)
+        icon_box = QLabel(icon)
+        icon_box.setObjectName("featureIcon")
+        icon_box.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_box.setFixedSize(62, 62)
+        text = QVBoxLayout()
+        text.setSpacing(2)
+        title_label = QLabel(title)
+        title_label.setObjectName("featureTitle")
+        desc_label = QLabel(description)
+        desc_label.setObjectName("featureDesc")
+        desc_label.setWordWrap(True)
+        text.addWidget(title_label)
+        text.addWidget(desc_label)
+        layout.addWidget(icon_box)
+        layout.addLayout(text, 1)
+        return row
+
+    def _build_viewer_page(self, initial_source: str) -> QWidget:
+        page = QWidget()
+        page.setObjectName("viewerRoot")
+        page.setStyleSheet(self._showroom_stylesheet())
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(14, 12, 14, 14)
+        layout.setSpacing(8)
+
+        header = QHBoxLayout()
+        brand = QLabel(
+            '<span style="color:#00a7ff;font-weight:800;">WEB</span>'
+            '<span style="color:#f5f8ff;font-weight:800;">GUARDIAO</span>'
+        )
+        brand.setObjectName("viewerBrand")
+        header.addWidget(brand)
+        self.viewer_badge = QLabel("IA Pediatria | Demo Viewer")
+        self.viewer_badge.setObjectName("viewerBadge")
+        header.addStretch(1)
+        header.addWidget(self.viewer_badge)
+        self.service_status_label = QLabel("API: verificando...")
+        self.service_status_label.setObjectName("serviceStatus")
+        header.addWidget(self.service_status_label)
+        self.service_button = QPushButton("Ativar API")
+        self.service_button.setObjectName("serviceButton")
         self.service_button.clicked.connect(self._on_service_button_clicked)
-        service_row.addWidget(self.service_status_label, 1)
-        service_row.addWidget(self.service_button)
-        layout.addLayout(service_row)
+        header.addWidget(self.service_button)
+        self.back_to_login_button = QPushButton("Sair")
+        self.back_to_login_button.setObjectName("ghostButton")
+        self.back_to_login_button.clicked.connect(self._logout_to_login)
+        header.addWidget(self.back_to_login_button)
+        layout.addLayout(header)
 
-        panel = QGroupBox("Operacao")
-        panel.setStyleSheet("QGroupBox { font-weight: bold; }")
-        panel_layout = QGridLayout(panel)
-        panel_layout.setContentsMargins(8, 8, 8, 8)
+        controls_card = QFrame()
+        controls_card.setObjectName("controlCard")
+        panel_layout = QGridLayout(controls_card)
+        panel_layout.setContentsMargins(10, 8, 10, 8)
         panel_layout.setHorizontalSpacing(8)
-        panel_layout.setVerticalSpacing(4)
+        panel_layout.setVerticalSpacing(6)
 
         self.source_mode = QComboBox()
         self.source_mode.addItems([SOURCE_FILE, SOURCE_URL, SOURCE_USB])
         self.source_mode.currentTextChanged.connect(self._update_source_controls)
-        panel_layout.addWidget(QLabel("Fonte"), 0, 0)
+        panel_layout.addWidget(QLabel("Camera/fonte"), 0, 0)
         panel_layout.addWidget(self.source_mode, 0, 1)
 
         self.source_value = QLineEdit(initial_source)
         self.source_value.setPlaceholderText("Escolha um video, URL RTSP ou camera USB")
-        self.browse_button = QPushButton("Escolher...")
+        self.browse_button = QPushButton("Escolher")
         self.browse_button.clicked.connect(self._browse_video)
-        panel_layout.addWidget(self.source_value, 0, 2, 1, 2)
-        panel_layout.addWidget(self.browse_button, 0, 4)
+        panel_layout.addWidget(self.source_value, 0, 2, 1, 3)
+        panel_layout.addWidget(self.browse_button, 0, 5)
 
         self.usb_index = QSpinBox()
         self.usb_index.setRange(0, 20)
-        panel_layout.addWidget(QLabel("USB"), 0, 5)
-        panel_layout.addWidget(self.usb_index, 0, 6)
+        panel_layout.addWidget(QLabel("USB"), 0, 6)
+        panel_layout.addWidget(self.usb_index, 0, 7)
 
         self.force_cpu_checkbox = QCheckBox("Forcar CPU")
         self.force_cpu_checkbox.setChecked(self.force_cpu_default)
@@ -750,35 +992,35 @@ class PediatriaPopupDemo(QMainWindow):
         self.collect_dataset_checkbox.setChecked(self.collect_dataset_default)
         panel_layout.addWidget(self.collect_dataset_checkbox, 1, 2, 1, 2)
 
-        controls = QHBoxLayout()
         self.start_button = QPushButton("Iniciar")
+        self.start_button.setObjectName("primarySmallButton")
         self.start_button.clicked.connect(self.start_analysis)
         self.stop_button = QPushButton("Parar")
+        self.stop_button.setObjectName("dangerButton")
         self.stop_button.clicked.connect(self.stop_analysis)
         self.stop_button.setEnabled(False)
-        controls.addWidget(self.start_button)
-        controls.addWidget(self.stop_button)
-        panel_layout.addLayout(controls, 1, 4, 1, 3)
+        panel_layout.addWidget(self.start_button, 1, 4)
+        panel_layout.addWidget(self.stop_button, 1, 5)
         panel_layout.setColumnStretch(2, 1)
-        layout.addWidget(panel)
+        layout.addWidget(controls_card)
 
+        status_row = QHBoxLayout()
         self.pipeline_status = QLabel("ANALISANDO: aguardando inicio")
-        self.pipeline_status.setStyleSheet(
-            "background: #20242b; color: white; padding: 5px; border-radius: 4px;"
-        )
-        layout.addWidget(self.pipeline_status)
+        self.pipeline_status.setObjectName("pipelineStatus")
         self.status = self.pipeline_status
-
         self.session_summary_label = QLabel("Sessao: 0 frames | 0 alertas")
-        self.session_summary_label.setStyleSheet("color: #555;")
-        layout.addWidget(self.session_summary_label)
+        self.session_summary_label.setObjectName("sessionSummary")
+        status_row.addWidget(self.pipeline_status, 1)
+        status_row.addWidget(self.session_summary_label)
+        layout.addLayout(status_row)
 
         self.video = QLabel("Selecione uma fonte e clique em Iniciar")
         self.video.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.video.setMinimumSize(720, 420)
-        self.video.setStyleSheet("background: #111; color: #ddd;")
+        self.video.setObjectName("videoPreview")
         self.video.setScaledContents(True)
         layout.addWidget(self.video, 1)
+
 
         # Configuracoes internas/protegidas: continuam existindo para CLI/testes,
         # mas nao aparecem no viewer operacional.
@@ -806,10 +1048,221 @@ class PediatriaPopupDemo(QMainWindow):
         self.dataset_max_per_track.setRange(1, 1000)
         self.dataset_max_per_track.setValue(self.dataset_max_crops_per_track)
         self.dataset_max_per_track.setVisible(False)
+        return page
 
-        self.setCentralWidget(central)
-        self._update_source_controls(self.source_mode.currentText())
+    def _login_to_viewer(self) -> None:
+        user = self.login_user_value.text().strip()
+        password = self.login_password_value.text().strip()
+        if user == "admin" and password == "admin":
+            self.login_error_label.setVisible(False)
+            self._enter_viewer()
+            return
+        self.login_error_label.setText("Usuario ou senha invalidos. Use admin/admin para demo.")
+        self.login_error_label.setVisible(True)
+        self.login_password_value.clear()
+        self.login_password_value.setFocus()
 
+    def _enter_viewer(self) -> None:
+        self.stack.setCurrentIndex(1)
+        self.source_value.setFocus()
+
+    def _logout_to_login(self) -> None:
+        if self.capture is not None or self.timer.isActive():
+            self.stop_analysis()
+        self.login_password_value.clear()
+        self.login_error_label.setVisible(False)
+        self.stack.setCurrentIndex(0)
+        self.login_user_value.setFocus()
+
+    def _is_login_drag_target(self, pos: QPoint) -> bool:
+        if self.stack.currentWidget() is not self.login_page:
+            return False
+        child = self.childAt(pos)
+        blocked_types = (QPushButton, QLineEdit, QComboBox, QCheckBox, QSpinBox)
+        while child is not None:
+            if isinstance(child, blocked_types):
+                return False
+            if child is self.login_drag_header:
+                return True
+            child = child.parentWidget()
+        return False
+
+    def mousePressEvent(self, event: Any) -> None:
+        if (
+            event.button() == Qt.MouseButton.LeftButton
+            and self._is_login_drag_target(event.position().toPoint())
+        ):
+            self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: Any) -> None:
+        if self._drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_offset)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: Any) -> None:
+        self._drag_offset = None
+        super().mouseReleaseEvent(event)
+    def _showroom_stylesheet(self) -> str:
+        return """
+        QWidget#loginRoot {
+            background: transparent;
+            color: #eef5ff;
+            font-family: Segoe UI, Arial, sans-serif;
+        }
+        QWidget#viewerRoot {
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                stop:0 #020814, stop:0.52 #061322, stop:1 #020814);
+            color: #eef5ff;
+            font-family: Segoe UI, Arial, sans-serif;
+        }
+        QFrame#loginShell {
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                stop:0 rgba(7, 18, 34, 232), stop:0.52 rgba(5, 22, 42, 214), stop:1 rgba(3, 9, 20, 235));
+            border: 1px solid rgba(84, 150, 214, 170);
+            border-radius: 22px;
+        }
+        QFrame#windowHeader {
+            background: transparent;
+            min-height: 32px;
+        }
+        QLabel { color: #eef5ff; }
+        QLineEdit, QComboBox, QSpinBox {
+            background: rgba(3, 12, 24, 185);
+            border: 1px solid rgba(132, 164, 196, 120);
+            border-radius: 8px;
+            color: #edf6ff;
+            min-height: 30px;
+            padding: 4px 10px;
+            selection-background-color: #007dff;
+        }
+        QComboBox::drop-down { width: 24px; border: 0; }
+        QCheckBox { color: #d8e6f5; spacing: 8px; }
+        QCheckBox::indicator {
+            width: 18px; height: 18px;
+            border: 1px solid rgba(148, 177, 206, 150);
+            border-radius: 4px;
+            background: rgba(4, 13, 27, 210);
+        }
+        QCheckBox::indicator:checked { background: #008dff; border-color: #2ab7ff; }
+        QPushButton {
+            border-radius: 8px;
+            min-height: 30px;
+            padding: 6px 14px;
+            color: #eff8ff;
+            background: rgba(13, 36, 63, 190);
+            border: 1px solid rgba(0, 157, 255, 130);
+            font-weight: 600;
+        }
+        QPushButton:hover { background: rgba(0, 121, 231, 190); }
+        QPushButton:disabled { color: #6e7f8f; border-color: #31465b; background: #111b27; }
+        QLabel#brandLogo { line-height: 1.0; }
+        QLabel#topAccent { color: #12aaff; font-size: 15px; font-weight: 700; }
+        QLabel#topText { color: #c8d2df; font-size: 15px; }
+        QPushButton#windowButton, QPushButton#closeButton {
+            color: #c8d8e8;
+            background: rgba(4, 16, 31, 85);
+            border: 1px solid rgba(115, 152, 190, 100);
+            border-radius: 8px;
+            font-weight: 800;
+            min-height: 24px;
+            padding: 0;
+        }
+        QPushButton#windowButton:hover { background: rgba(0, 140, 255, 95); color: #ffffff; }
+        QPushButton#closeButton:hover { background: rgba(255, 80, 80, 155); color: #ffffff; border-color: rgba(255, 135, 135, 190); }
+        QFrame#topDivider { color: rgba(151, 171, 194, 80); max-height: 28px; }
+        QLabel#heroTitle { font-size: 50px; font-weight: 900; letter-spacing: -1px; }
+        QLabel#heroSubtitle { color: #b9c4d2; font-size: 24px; line-height: 1.25; }
+        QFrame#heroLine { color: #008dff; max-height: 1px; }
+        QLabel#featureIcon {
+            color: #19b8ff;
+            border: 1px solid rgba(0, 145, 255, 170);
+            border-radius: 10px;
+            background: rgba(2, 16, 34, 190);
+            font-size: 18px;
+            font-weight: 800;
+        }
+        QLabel#featureTitle { font-size: 17px; font-weight: 700; color: #f5f8ff; }
+        QLabel#featureDesc { font-size: 14px; color: #bdc9d8; line-height: 1.3; }
+        QLabel#bottomBadge {
+            color: #d5dfeb;
+            background: rgba(2, 10, 22, 170);
+            border: 1px solid rgba(66, 96, 126, 130);
+            border-radius: 9px;
+            padding: 10px 14px;
+        }
+        QFrame#loginCard {
+            background: rgba(4, 14, 28, 188);
+            border: 1px solid rgba(84, 150, 214, 170);
+            border-radius: 18px;
+        }
+        QLabel#shieldMark {
+            min-width: 74px; min-height: 74px;
+            border-radius: 37px;
+            border: 2px solid #00a7ff;
+            color: #19b8ff;
+            background: rgba(0, 126, 255, 30);
+            font-size: 22px;
+            font-weight: 900;
+        }
+        QLabel#cardTitle { font-size: 24px; font-weight: 800; }
+        QLabel#cardSubtitle { font-size: 15px; color: #b7c3d1; }
+        QLabel#fieldLabel { font-size: 13px; font-weight: 700; color: #eef5ff; }
+        QLineEdit#loginField { min-height: 36px; font-size: 14px; padding-left: 12px; }
+        QLabel#linkLabel { color: #0aa7ff; }
+        QLabel#loginError { color: #ff8f8f; font-size: 12px; }
+        QPushButton#primaryButton {
+            min-height: 38px;
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #008cff, stop:1 #0752c9);
+            border: 1px solid #209bff;
+            font-size: 18px;
+            font-weight: 800;
+        }
+        QPushButton#secondaryButton {
+            min-height: 36px;
+            color: #15adff;
+            background: rgba(2, 14, 29, 170);
+            border: 1px solid rgba(0, 157, 255, 180);
+            font-size: 14px;
+            font-weight: 800;
+        }
+        QFrame#cardLine { color: rgba(146, 165, 186, 80); }
+        QLabel#orLabel, QLabel#cardFooter { color: #b8c4d1; }
+        QLabel#viewerBrand { font-size: 22px; }
+        QLabel#viewerBadge {
+            color: #13aaff;
+            border: 1px solid rgba(0, 157, 255, 120);
+            border-radius: 14px;
+            padding: 6px 12px;
+            background: rgba(0, 120, 255, 20);
+        }
+        QPushButton#ghostButton, QPushButton#serviceButton { background: transparent; color: #b9c8d8; border-color: rgba(106, 135, 164, 130); min-height: 28px; padding: 4px 10px; }
+        QFrame#controlCard {
+            background: rgba(5, 18, 35, 210);
+            border: 1px solid rgba(67, 103, 141, 150);
+            border-radius: 12px;
+        }
+        QPushButton#primarySmallButton { background: #007dff; border-color: #18aaff; }
+        QPushButton#dangerButton { background: #172335; border-color: rgba(255, 110, 110, 140); }
+        QLabel#pipelineStatus {
+            background: rgba(0, 125, 255, 55);
+            border: 1px solid rgba(0, 157, 255, 140);
+            border-radius: 9px;
+            padding: 8px 12px;
+            font-weight: 800;
+        }
+        QLabel#sessionSummary { color: #b8c7d7; padding: 8px 10px; }
+        QLabel#videoPreview {
+            background: #02070d;
+            color: #8294a7;
+            border: 1px solid rgba(66, 101, 137, 150);
+            border-radius: 12px;
+        }
+        """
     def _update_source_controls(self, mode: str) -> None:
         is_usb = mode == SOURCE_USB
         self.usb_index.setEnabled(is_usb)
@@ -824,17 +1277,31 @@ class PediatriaPopupDemo(QMainWindow):
 
     def _set_service_status(self, running: bool | None, note: str = "") -> None:
         if running is True:
-            text = f"Servico local: rodando ({service_launcher.DEFAULT_HOST}:{service_launcher.DEFAULT_PORT})"
-            style = "color: #2e7d32;"
+            text = "API online"
+            style = (
+                "color: #7cffb2; background: rgba(24, 180, 105, 35); "
+                "border: 1px solid rgba(78, 255, 170, 120); border-radius: 12px; "
+                "padding: 5px 10px; font-weight: 800;"
+            )
+            self.service_button.setText("Verificar")
         elif running is False:
-            text = "Servico local: parado" + (f" - {note}" if note else "")
-            style = "color: #c62828;"
+            text = "API offline" + (f" - {note}" if note else "")
+            style = (
+                "color: #ffb2b2; background: rgba(220, 80, 80, 28); "
+                "border: 1px solid rgba(255, 130, 130, 110); border-radius: 12px; "
+                "padding: 5px 10px; font-weight: 800;"
+            )
+            self.service_button.setText("Ativar API")
         else:
-            text = f"Servico local: {note or 'verificando...'}"
-            style = "color: #888;"
+            text = f"API: {note or 'verificando...'}"
+            style = (
+                "color: #b8c7d7; background: rgba(0, 120, 255, 18); "
+                "border: 1px solid rgba(0, 157, 255, 90); border-radius: 12px; "
+                "padding: 5px 10px; font-weight: 700;"
+            )
+            self.service_button.setText("Aguarde")
         self.service_status_label.setText(text)
         self.service_status_label.setStyleSheet(style)
-
     def _check_service_async(self, callback: Callable[[bool], None]) -> None:
         """Roda o health-check numa thread separada.
 
@@ -1012,6 +1479,9 @@ class PediatriaPopupDemo(QMainWindow):
         self.stop_analysis()
         self.capture = capture
         self.current_source = source
+        self._reconnecting = False
+        self._reconnect_attempts = 0
+        self._reconnect_timer.stop()
         if self.service is not None:
             self.service.reset_session_state()
         self.alert_latch.clear()
@@ -1078,6 +1548,8 @@ class PediatriaPopupDemo(QMainWindow):
 
     def stop_analysis(self) -> None:
         self.timer.stop()
+        self._reconnect_timer.stop()
+        self._reconnecting = False
         if self.capture is not None:
             self.capture.release()
             self.capture = None
@@ -1119,8 +1591,67 @@ class PediatriaPopupDemo(QMainWindow):
             self.status.setText("Analise parada. Relatorio salvo.")
             self.current_source = None
 
+    def _begin_reconnect(self) -> None:
+        """Fonte de rede/dispositivo parou de entregar frames (queda de rede,
+        camera reiniciando, etc.). Em vez de encerrar a analise como antes
+        (exigindo clicar 'Iniciar' de novo), tenta reabrir a mesma fonte com
+        backoff exponencial, sem bloquear a thread de UI (QTimer.singleShot
+        em vez de time.sleep)."""
+        if self.current_source is None or self.capture is None:
+            self.stop_analysis()
+            return
+        self.capture.release()
+        self.capture = None
+        self._reconnecting = True
+        self._reconnect_attempts = 0
+        source_name = source_display_name(self.current_source)
+        self.status.setText(f"Conexao perdida com {source_name}. Tentando reconectar...")
+        self._append_session_log(
+            {"event_type": "reconnect_started", "source": source_name, "attempt": 1}
+        )
+        self._reconnect_timer.start(0)
+
+    def _attempt_reconnect_capture(self) -> None:
+        if not self._reconnecting or self.current_source is None:
+            return
+        self._reconnect_attempts += 1
+        source_name = source_display_name(self.current_source)
+        candidate = open_capture_source(self.current_source)
+        ok = candidate.isOpened()
+        if ok:
+            ok, _probe_frame = candidate.read()
+        if ok:
+            self.capture = candidate
+            self._reconnecting = False
+            self.status.setText(f"Reconectado a {source_name} | CPU/GPU: {self.device}")
+            self._append_session_log(
+                {"event_type": "reconnected", "source": source_name, "attempt": self._reconnect_attempts}
+            )
+            return
+        candidate.release()
+        self._append_session_log(
+            {"event_type": "reconnect_failed", "source": source_name, "attempt": self._reconnect_attempts}
+        )
+        if self._reconnect_attempts >= self._reconnect_max_attempts:
+            self._reconnecting = False
+            self.status.setText(f"Falha ao reconectar a {source_name}. Analise parada.")
+            self.stop_analysis()
+            return
+        backoff_seconds = min(
+            self._reconnect_backoff_seconds * (2 ** (self._reconnect_attempts - 1)),
+            self._reconnect_backoff_max_seconds,
+        )
+        self.status.setText(
+            f"Reconectando a {source_name}... tentativa {self._reconnect_attempts + 1} em {backoff_seconds:.0f}s"
+        )
+        self._reconnect_timer.start(int(backoff_seconds * 1000))
+
     def _next_frame(self) -> None:
         if self.capture is None or self.service is None:
+            return
+        if self._reconnecting:
+            # Reconexao assincrona em andamento (ver _attempt_reconnect_capture);
+            # nao ha capture valido para ler agora, so aguardar o callback.
             return
         loop_started = time.perf_counter()
         ok, frame = self.capture.read()
@@ -1128,7 +1659,7 @@ class PediatriaPopupDemo(QMainWindow):
             if isinstance(self.current_source, str) and "://" not in self.current_source:
                 self.capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 return
-            self.stop_analysis()
+            self._begin_reconnect()
             return
 
         self.frame_index += 1
@@ -2034,4 +2565,14 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
+
+
+
+
 

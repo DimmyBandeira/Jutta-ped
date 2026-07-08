@@ -6,7 +6,7 @@ import threading
 import time
 import uuid
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -65,6 +65,25 @@ def source_display_name(source: str | int) -> str:
         return "camera_remota"
     name = Path(value).stem if value else "pediatria_local"
     return safe_name(name or "pediatria_local")
+
+
+def classify_source_kind(source: str | int) -> str:
+    """Classifica a fonte para decidir a politica de recuperacao de falha de
+    leitura em `PediatriaHeadlessSession._run_loop`.
+
+    'device' (indice USB/webcam) e 'network' (RTSP/RTSPS/HTTP/HTTPS) tentam
+    reconexao automatica quando `capture.read()` falha -- sao fontes onde
+    read=False normalmente significa queda de rede/dispositivo, nao fim de
+    conteudo. 'file' (caminho local) NAO tenta reconectar: read=False e o
+    EOF esperado do arquivo, tratado por `video_end_policy` (stop/loop).
+    """
+    if isinstance(source, int):
+        return "device"
+    value = str(source or "")
+    parsed = urlsplit(value)
+    if parsed.scheme in {"rtsp", "rtsps", "http", "https"}:
+        return "network"
+    return "file"
 
 
 def resolve_device(force_cpu: bool, requested: str = "auto") -> tuple[str, str]:
@@ -238,6 +257,15 @@ class SessionStartConfig:
     report_dir: Path = DEFAULT_REPORT_DIR
     diagnostic_log_interval_frames: int = 60
     cooldown_seconds: float = 120.0
+    # Recuperacao de falha de leitura (ver classify_source_kind). So se
+    # aplica a fontes 'device'/'network'; 'file' segue video_end_policy.
+    reconnect_enabled: bool = True
+    max_reconnect_attempts: int = 5
+    reconnect_backoff_seconds: float = 2.0
+    reconnect_backoff_max_seconds: float = 30.0
+    # So usado para fontes 'file': "stop" (padrao, comportamento anterior --
+    # EOF encerra a sessao) ou "loop" (reinicia do frame 0 ao chegar no fim).
+    video_end_policy: str = "stop"
 
 
 @dataclass
@@ -260,6 +288,10 @@ class SessionState:
     summary_path: str = ""
     last_event_at: str | None = None
     last_frame_at: str | None = None
+    reconnecting: bool = False
+    reconnect_attempts: int = 0
+    last_reconnect_at: str | None = None
+    stop_reason: str | None = None
 
 
 class SimpleAlertLatch:
@@ -314,6 +346,7 @@ class PediatriaHeadlessSession:
             weak_child_promoter_factory=_load_weak_child_promoter,
         )
         self.capture: Any | None = None
+        self._source_kind = classify_source_kind(config.source)
         self.thread: threading.Thread | None = None
         self.stop_event = threading.Event()
         self.lock = threading.Lock()
@@ -339,6 +372,8 @@ class PediatriaHeadlessSession:
         self.thread.start()
 
     def stop(self) -> None:
+        with self.lock:
+            self.state.stop_reason = "stop_requested"
         self.stop_event.set()
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=5.0)
@@ -359,17 +394,100 @@ class PediatriaHeadlessSession:
                 loop_started = time.perf_counter()
                 ok, frame = self.capture.read()
                 if not ok or frame is None:
-                    break
+                    frame = self._handle_read_failure()
+                    if frame is None:
+                        break
                 self._process_frame(frame)
                 self.telemetry.capture_loop_ms.add((time.perf_counter() - loop_started) * 1000.0)
                 self.telemetry.sample_resources()
         except Exception as exc:
             with self.lock:
                 self.state.last_error = str(exc)
+                self.state.stop_reason = "error"
             self._append_session_log({"event_type": "session_error", "source": self.camera_id, "error": str(exc)})
         finally:
             self._stop_capture()
             self._finish("stopped" if self.stop_event.is_set() else "finished")
+
+    def _handle_read_failure(self) -> Any | None:
+        """`capture.read()` falhou. Decide o que fazer conforme o tipo de
+        fonte (ver `classify_source_kind`) e devolve o proximo frame ja lido
+        quando recupera, ou None para encerrar o loop (mesmo comportamento
+        de antes, preservado por padrao).
+
+        - 'network'/'device' com reconexao habilitada: tenta reabrir a fonte
+          com backoff (`_reconnect_loop`). Isso e o caso do bug relatado:
+          RTSP/USB cai e a sessao morria, exigindo reinicio manual.
+        - 'file': segue `video_end_policy` -- "stop" (padrao) encerra a
+          sessao exatamente como antes (EOF real de arquivo local nao e uma
+          falha); "loop" reinicia do frame 0.
+        """
+        if self.stop_event.is_set():
+            return None
+        if self.config.reconnect_enabled and self._source_kind in {"network", "device"}:
+            reconnected = self._reconnect_loop()
+            if reconnected is None:
+                if not self.stop_event.is_set():
+                    with self.lock:
+                        self.state.last_error = "Falha ao reconectar a fonte apos esgotar as tentativas de reconexao."
+                        self.state.stop_reason = "reconnect_exhausted"
+                    self._append_session_log({"event_type": "reconnect_exhausted", "source": self.camera_id})
+                return None
+            self.capture, frame = reconnected
+            return frame
+        if self._source_kind == "file" and self.config.video_end_policy == "loop":
+            self.capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            ok, frame = self.capture.read()
+            if ok and frame is not None:
+                self._append_session_log({"event_type": "loop_restart", "source": self.camera_id})
+                return frame
+        with self.lock:
+            self.state.stop_reason = "eof" if self._source_kind == "file" else "read_failed"
+        return None
+
+    def _reconnect_loop(self) -> tuple[Any, Any] | None:
+        """Tenta reabrir `self.config.source` com backoff exponencial ate
+        conseguir ler um frame, esgotar `max_reconnect_attempts` ou o
+        `stop_event` ser sinalizado (interrompe o backoff na hora, sem
+        travar `stop()`). Retorna (capture, frame) ao reconectar ou None.
+        """
+        max_attempts = self.config.max_reconnect_attempts
+        with self.lock:
+            self.state.reconnecting = True
+        self._stop_capture()
+        try:
+            attempt = 0
+            while max_attempts < 0 or attempt < max_attempts:
+                attempt += 1
+                backoff = min(
+                    self.config.reconnect_backoff_seconds * (2 ** (attempt - 1)),
+                    self.config.reconnect_backoff_max_seconds,
+                )
+                self._append_session_log(
+                    {"event_type": "reconnect_started", "source": self.camera_id, "attempt": attempt, "backoff_seconds": backoff}
+                )
+                if self.stop_event.wait(timeout=backoff):
+                    return None
+                candidate = open_capture_source(self.config.source)
+                ok, frame = (False, None)
+                if candidate.isOpened():
+                    ok, frame = candidate.read()
+                if ok and frame is not None:
+                    with self.lock:
+                        self.state.reconnect_attempts += attempt
+                        self.state.last_reconnect_at = datetime.now().isoformat(timespec="milliseconds")
+                    self._append_session_log(
+                        {"event_type": "reconnected", "source": self.camera_id, "attempt": attempt}
+                    )
+                    return candidate, frame
+                candidate.release()
+                self._append_session_log(
+                    {"event_type": "reconnect_failed", "source": self.camera_id, "attempt": attempt}
+                )
+            return None
+        finally:
+            with self.lock:
+                self.state.reconnecting = False
 
     def _process_frame(self, frame: Any) -> None:
         with self.lock:
@@ -663,6 +781,8 @@ def operational_status_from_session(status: dict[str, Any]) -> str:
         return "ERROR"
     if state in {"stopped", "finished"}:
         return "STOPPED"
+    if status.get("reconnecting"):
+        return "RECONECTANDO"
     value = str(status.get("status_final") or "ANALISANDO")
     allowed = {
         "ANALISANDO",
@@ -690,6 +810,9 @@ def camera_status_payload(status: dict[str, Any]) -> dict[str, Any]:
         "last_error": status.get("last_error"),
         "started_at": status.get("started_at"),
         "stopped_at": status.get("stopped_at"),
+        "reconnecting": bool(status.get("reconnecting", False)),
+        "reconnect_attempts": status.get("reconnect_attempts", 0),
+        "stop_reason": status.get("stop_reason"),
     }
 
 
@@ -719,6 +842,8 @@ _ANALYSIS_STATES = {
 
 
 def instance_state_from_session(status: dict[str, Any]) -> str:
+    if status.get("reconnecting"):
+        return "degraded"
     if status.get("last_error"):
         return "error"
     raw = str(status.get("status") or "starting").lower()
@@ -728,7 +853,7 @@ def instance_state_from_session(status: dict[str, Any]) -> str:
 def instance_health_from_state(state: str) -> str:
     if state == "error":
         return "unhealthy"
-    if state in {"starting", "stopping"}:
+    if state in {"starting", "stopping", "degraded"}:
         return "degraded"
     return "healthy"
 
@@ -758,6 +883,9 @@ def instance_status_payload(status: dict[str, Any]) -> dict[str, Any]:
         "analysis_state": analysis_state_from_session(status),
         "last_event_at": status.get("last_event_at"),
         "last_frame_at": status.get("last_frame_at"),
+        "reconnect_attempts": status.get("reconnect_attempts", 0),
+        "last_reconnect_at": status.get("last_reconnect_at"),
+        "stop_reason": status.get("stop_reason"),
         "telemetry": status.get("telemetry") or {},
     }
 
@@ -804,20 +932,12 @@ class PediatriaSessionManager:
             status = current.status()
             if str(status.get("status") or "").lower() == "running":
                 return camera_status_payload(status)
-        started = self.start_session(
-            SessionStartConfig(
-                source=config.source,
-                camera_id=camera_id,
-                stream_id=config.stream_id,
-                lease_id=config.lease_id,
-                force_cpu=config.force_cpu,
-                modo_coleta=config.modo_coleta,
-                requested_device=config.requested_device,
-                report_dir=config.report_dir,
-                diagnostic_log_interval_frames=config.diagnostic_log_interval_frames,
-                cooldown_seconds=config.cooldown_seconds,
-            )
-        )
+        # dataclasses.replace (nao um construtor com campo a campo) para o
+        # `camera_id` normalizado nao perder silenciosamente nenhum campo
+        # novo de SessionStartConfig -- ja aconteceu antes (stream_id/lease_id
+        # ficaram de fora ate serem notados) e a politica de reconexao desta
+        # rodada e sensivel demais para arriscar o mesmo de novo.
+        started = self.start_session(replace(config, camera_id=camera_id))
         return camera_status_payload(started)
 
     def disable_camera(self, camera_id: str) -> dict[str, Any]:

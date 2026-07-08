@@ -1,10 +1,14 @@
-﻿from collections import Counter
+﻿import json
+from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 import numpy as np
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QLabel, QPushButton
 
+import src.jutta_ped.ui.demo_viewer as demo_viewer_module
 from src.jutta_ped.ui.demo_viewer import (
     PediatriaDatasetCollector,
     PediatriaPopupDemo,
@@ -18,6 +22,7 @@ from src.jutta_ped.ui.demo_viewer import (
     source_display_name,
 )
 from modulo.pediatria.detector_mvp import PediatricDetection, PediatricsDetectorMvpRunner
+from modulo.pediatria.mvp_popup import PediatriaAlertPopup
 from modulo.pediatria.identity_stabilizer import PediatricIdentityStabilizer
 from modulo.pediatria.weak_child_promoter import WeakChildCandidatePromoter
 from src.jutta_ped.service.telemetry import SessionTelemetry
@@ -232,6 +237,38 @@ def test_presentation_window_exposes_source_controls(qtbot, tmp_path: Path) -> N
     )
     qtbot.addWidget(window)
 
+    assert window.stack.currentIndex() == 0
+    assert window.windowFlags() & Qt.WindowType.FramelessWindowHint
+    assert window.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground) is True
+    assert "loginShell" in window.login_page.styleSheet()
+    assert window.login_drag_header.objectName() == "windowHeader"
+    assert window.login_minimize_button.text() == "-"
+    assert window.login_close_button.text() == "X"
+    assert window.login_button.text() == "Entrar"
+    assert window.demo_access_button.text() == "Acesso Rapido (Demo)"
+    assert window.back_to_login_button.text() == "Sair"
+    assert window.service_status_label.text() == "API: verificando..."
+    assert window.service_button.text() == "Ativar API"
+
+    window.login_user_value.setText("admin")
+    window.login_password_value.setText("errada")
+    window._login_to_viewer()
+    assert window.stack.currentIndex() == 0
+    assert window.login_error_label.isHidden() is False
+    assert "admin/admin" in window.login_error_label.text()
+
+    window.login_password_value.setText("admin")
+    window._login_to_viewer()
+    assert window.stack.currentIndex() == 1
+    assert window.login_error_label.isHidden() is True
+
+    window._logout_to_login()
+    assert window.stack.currentIndex() == 0
+    assert window.login_password_value.text() == ""
+
+    window._enter_viewer()
+    assert window.stack.currentIndex() == 1
+
     assert window.source_mode.count() == 3
     assert window.start_button.text() == "Iniciar"
     assert window.stop_button.isEnabled() is False
@@ -256,6 +293,21 @@ def test_presentation_window_exposes_source_controls(qtbot, tmp_path: Path) -> N
     assert window.usb_index.isEnabled() is True
     assert window.source_value.isEnabled() is False
 
+
+def test_alert_popup_uses_demo_viewer_theme(qtbot) -> None:
+    popup = PediatriaAlertPopup(
+        camera_id="Camera Social",
+        track_id=7,
+        confidence=0.82,
+        alert_state="CHILD_ALONE",
+    )
+    qtbot.addWidget(popup)
+
+    assert popup.windowTitle() == "WebGuardiao - IA Pediatria"
+    assert "popupCard" in popup.styleSheet()
+    assert "Possivel crianca desacompanhada" in popup.findChild(QLabel, "title").text()
+    buttons = popup.findChildren(QPushButton)
+    assert buttons[0].text() == "Entendi, fechar alerta"
 
 def test_presentation_window_can_start_with_force_cpu_checked(
     qtbot,
@@ -378,4 +430,133 @@ def test_event_evidence_writes_frame_metadata_and_session_summary(tmp_path: Path
     assert summary["total_person_detector_zero"] == 1
     assert (demo.evidence_dir / "session_summary.json").is_file()
     assert (demo.evidence_dir / "session_summary.csv").is_file()
+
+
+def _make_bare_viewer_for_reconnect_tests(tmp_path: Path) -> PediatriaPopupDemo:
+    """Instancia PediatriaPopupDemo sem __init__ (sem Qt de verdade) para
+    testar a logica de reconexao de _next_frame isoladamente. self.status e
+    self._reconnect_timer sao stand-ins sem Qt real: nao dependem do widget
+    ter sido construido, e _attempt_reconnect_capture so precisa dos metodos
+    setText/start/stop -- ver nota de RuntimeError em instancias PyQt6 bare
+    (mesmo padrao ja usado em test_event_evidence_writes_frame_metadata_and_session_summary).
+    """
+    demo = PediatriaPopupDemo.__new__(PediatriaPopupDemo)
+    demo.session_id = "20260707_120000"
+    demo.evidence_dir = tmp_path / "evidence" / "sessions" / demo.session_id
+    demo.events_log_path = demo.evidence_dir / "events.jsonl"
+    demo.device = "cpu"
+    demo.telemetry = SessionTelemetry()
+    demo.status = SimpleNamespace(setText=lambda text: None)
+    demo._reconnect_timer = SimpleNamespace(start=lambda ms: None, stop=lambda: None)
+    demo._reconnecting = False
+    demo._reconnect_attempts = 0
+    demo._reconnect_max_attempts = 5
+    demo._reconnect_backoff_seconds = 2.0
+    demo._reconnect_backoff_max_seconds = 30.0
+    demo.capture = None
+    demo.current_source = None
+    return demo
+
+
+def _read_jsonl_events(path: Path) -> list[dict]:
+    if not path.is_file():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def test_begin_reconnect_releases_capture_and_logs_event(tmp_path: Path) -> None:
+    """Antes desta correcao, capture.read()==False numa fonte de rede/USB
+    chamava stop_analysis() direto -- exigindo clicar 'Iniciar' de novo.
+    Agora o primeiro passo e liberar o capture antigo e entrar em modo de
+    reconexao, sem encerrar a analise."""
+
+    class FakeCapture:
+        def __init__(self) -> None:
+            self.released = False
+
+        def release(self) -> None:
+            self.released = True
+
+    demo = _make_bare_viewer_for_reconnect_tests(tmp_path)
+    capture = FakeCapture()
+    demo.capture = capture
+    demo.current_source = "rtsp://camera.local/stream"
+
+    demo._begin_reconnect()
+
+    assert capture.released is True
+    assert demo.capture is None
+    assert demo._reconnecting is True
+    events = _read_jsonl_events(demo.events_log_path)
+    assert [item["event_type"] for item in events] == ["reconnect_started"]
+
+
+def test_attempt_reconnect_capture_recovers_without_stopping(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    demo = _make_bare_viewer_for_reconnect_tests(tmp_path)
+    demo.current_source = "rtsp://camera.local/stream"
+    demo._reconnecting = True
+    demo._reconnect_attempts = 0
+
+    class RecoveredCapture:
+        def isOpened(self) -> bool:
+            return True
+
+        def read(self):
+            return True, np.zeros((4, 4, 3), dtype=np.uint8)
+
+        def release(self) -> None:
+            pass
+
+    monkeypatch.setattr(demo_viewer_module, "open_capture_source", lambda source: RecoveredCapture())
+
+    demo._attempt_reconnect_capture()
+
+    assert demo._reconnecting is False
+    assert demo.capture is not None
+    events = _read_jsonl_events(demo.events_log_path)
+    assert [item["event_type"] for item in events] == ["reconnected"]
+
+
+def test_reconnect_gives_up_after_max_attempts_and_stops_analysis(qtbot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    window = PediatriaPopupDemo(
+        model=tmp_path / "model.pt",
+        report=tmp_path / "report.json",
+        confidence=0.25,
+        cooldown_seconds=120.0,
+        device="cpu",
+    )
+    qtbot.addWidget(window)
+    window.current_source = "rtsp://camera.local/stream"
+    window._reconnecting = True
+    window._reconnect_attempts = 0
+    window._reconnect_max_attempts = 2
+    window._reconnect_backoff_seconds = 0.01
+
+    class DeadCapture:
+        def isOpened(self) -> bool:
+            return False
+
+        def read(self):
+            return False, None
+
+        def release(self) -> None:
+            pass
+
+    monkeypatch.setattr(demo_viewer_module, "open_capture_source", lambda source: DeadCapture())
+
+    window._attempt_reconnect_capture()
+    assert window._reconnecting is True
+    assert window._reconnect_attempts == 1
+
+    window._attempt_reconnect_capture()
+    assert window._reconnecting is False
+    assert window._reconnect_attempts == 2
+    assert window.current_source is None
+    assert window.start_button.isEnabled() is True
+    assert window.stop_button.isEnabled() is False
+
+
+
+
+
 
