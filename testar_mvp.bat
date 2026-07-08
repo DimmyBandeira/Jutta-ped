@@ -7,3 +7,4 @@ set "QT_QPA_PLATFORM=offscreen"
 set "YOLO_CONFIG_DIR=%ROOT%runtime\ultralytics"
 cd /d "%ROOT%"
 "%PYTHON%" -m pytest tests -q
+more

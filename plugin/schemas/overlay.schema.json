@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webguardiao.local/plugins/ia.pediatria/overlay.schema.json",
+  "title": "Overlay/bbox da IA Pediatria",
+  "description": "Contrato PRINCIPAL de saida visual do plugin. O Core fornece o video (via plano de midia go2rtc/RTSP/WebRTC); o plugin fornece so bbox/overlay; quem desenha por cima do video e a UI/cliente que estiver assistindo. O video anotado (annotated_preview_stream) e saida OPCIONAL, so para debug/demo -- nunca o caminho principal de integracao.",
+  "type": "object",
+  "required": [
+    "type",
+    "plugin_id",
+    "instance_id",
+    "camera_id",
+    "stream_id",
+    "frame_seq",
+    "captured_at",
+    "objects"
+  ],
+  "properties": {
+    "type": {
+      "const": "overlay_bboxes"
+    },
+    "plugin_id": {
+      "type": "string",
+      "const": "ia.pediatria"
+    },
+    "instance_id": {
+      "type": "string",
+      "description": "Identidade estavel da instancia/sessao do plugin que gerou este overlay (equivale a session_id hoje)."
+    },
+    "camera_id": {
+      "type": "string"
+    },
+    "stream_id": {
+      "type": "string",
+      "description": "Identidade do stream_ref cujo frame este overlay descreve."
+    },
+    "frame_seq": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Sequencia/indice do frame dentro do stream, para o cliente casar overlay com o frame de video certo."
+    },
+    "stream_generation": {
+      "type": ["integer", "null"],
+      "description": "Geracao do stream (reconexao/reinicio), para o cliente descartar overlays de uma geracao antiga -- mesmo principio de fencing do WG Runtime Contract."
+    },
+    "captured_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp de captura do frame de origem (nao o de publicacao do overlay)."
+    },
+    "frame_age_ms": {
+      "type": ["number", "null"],
+      "description": "Idade do frame no momento da publicacao do overlay (captured_at -> agora), para o cliente avaliar qualidade/atraso temporal."
+    },
+    "objects": {
+      "type": "array",
+      "description": "Um item por alvo detectado neste frame.",
+      "items": {
+        "type": "object",
+        "required": ["target_id", "label", "bbox_xyxy", "confidence", "state"],
+        "properties": {
+          "target_id": {
+            "type": "integer",
+            "description": "Track id estavel do alvo (apos estabilizacao de identidade); usar para desenhar overlay continuo sem 'piscar' entre frames."
+          },
+          "label": {
+            "type": "string",
+            "enum": ["child", "adult", "uncertain"],
+            "description": "Papel classificado pelo especialista (nao uma classe generica de deteccao)."
+          },
+          "bbox_xyxy": {
+            "type": "array",
+            "description": "Caixa delimitadora em pixels do frame de origem, formato [x1, y1, x2, y2].",
+            "items": { "type": "number" },
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ACCOMPANIED",
+              "CHILD_ALONE",
+              "CHILD_SEPARATED",
+              "UNCERTAIN",
+              "NO_CHILD",
+              "ANALISANDO"
+            ],
+            "description": "Estado de companhia do alvo (so relevante para role=child; adultos usam ANALISANDO/NO_CHILD por padrao)."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
