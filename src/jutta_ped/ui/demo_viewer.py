@@ -32,7 +32,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import cv2
 from PyQt6.QtCore import QPoint, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QImage, QPixmap
+from PyQt6.QtGui import QColor, QImage, QKeySequence, QPixmap, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -81,6 +81,14 @@ from modulo.pediatria.detector_mvp import (
     PediatricsDetectorMvpRunner,
     resolve_role_conflicts,
 )
+from modulo.pediatria.model_registry_service import ModelRegistryService, resolve_default_model_path
+
+# Registry tecnico (runtime/model_registry.json, tela escondida em
+# Ctrl+Shift+M) tem prioridade quando existe uma entrada ativa valida; sem
+# registry ou sem entrada ativa, cai exatamente nos caminhos hardcoded
+# acima -- comportamento identico ao de antes desta rodada.
+DEFAULT_MODEL_PATH = resolve_default_model_path("specialist", DEFAULT_MODEL_PATH, root=ROOT)
+DEFAULT_PERSON_MODEL_PATH = resolve_default_model_path("detector", DEFAULT_PERSON_MODEL_PATH, root=ROOT)
 from modulo.pediatria.identity_stabilizer import (
     PediatricIdentityMemory,
     PediatricIdentityMerge,
@@ -703,6 +711,11 @@ class PediatriaPopupDemo(QMainWindow):
         self._reconnect_timer = QTimer(self)
         self._reconnect_timer.setSingleShot(True)
         self._reconnect_timer.timeout.connect(self._attempt_reconnect_capture)
+
+        # Tela tecnica escondida de gerenciamento de modelos (nao aparece na
+        # navegacao principal, so por atalho -- ver src/jutta_ped/ui/model_manager_dialog.py).
+        self._model_manager_shortcut = QShortcut(QKeySequence("Ctrl+Shift+M"), self)
+        self._model_manager_shortcut.activated.connect(self._open_model_manager)
 
         self._build_ui(initial_source)
 
@@ -1645,6 +1658,16 @@ class PediatriaPopupDemo(QMainWindow):
             f"Reconectando a {source_name}... tentativa {self._reconnect_attempts + 1} em {backoff_seconds:.0f}s"
         )
         self._reconnect_timer.start(int(backoff_seconds * 1000))
+
+    def _open_model_manager(self) -> None:
+        """Ctrl+Shift+M -- tela tecnica escondida (nao entra na navegacao
+        principal). Import local para nao acoplar o modulo do dialog ao
+        carregamento normal da janela (so custa algo se o atalho for usado).
+        """
+        from src.jutta_ped.ui.model_manager_dialog import ModelManagerDialog
+
+        dialog = ModelManagerDialog(parent=self)
+        dialog.exec()
 
     def _next_frame(self) -> None:
         if self.capture is None or self.service is None:

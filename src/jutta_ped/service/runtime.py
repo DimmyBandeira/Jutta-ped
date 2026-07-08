@@ -15,6 +15,7 @@ from urllib.parse import urlsplit, urlunsplit
 import cv2
 
 from modulo.pediatria.detector_mvp import PediatricDetection, PediatricsDetectorMvpRunner
+from modulo.pediatria.model_registry_service import resolve_default_model_path
 from src.jutta_ped.service.pediatria_service import (
     PediatriaService,
     PediatriaServiceConfig,
@@ -29,6 +30,12 @@ if not DEFAULT_MODEL_PATH.exists():
 DEFAULT_PERSON_MODEL_PATH = ROOT / "src" / "models" / "yolo11n_openvino_model"
 if not DEFAULT_PERSON_MODEL_PATH.exists():
     DEFAULT_PERSON_MODEL_PATH = ROOT / "src" / "models" / "yolo26n_openvino_model"
+# Registry tecnico (runtime/model_registry.json, ver Ctrl+Shift+M no Demo
+# Viewer) tem prioridade quando tem uma entrada ativa valida; sem registry
+# ou sem entrada ativa, cai exatamente nos caminhos hardcoded acima --
+# comportamento identico ao de antes desta rodada.
+DEFAULT_MODEL_PATH = resolve_default_model_path("specialist", DEFAULT_MODEL_PATH, root=ROOT)
+DEFAULT_PERSON_MODEL_PATH = resolve_default_model_path("detector", DEFAULT_PERSON_MODEL_PATH, root=ROOT)
 DEFAULT_REPORT_DIR = ROOT / "pediatria_results" / "service_api"
 
 

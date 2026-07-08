@@ -7,3 +7,8 @@ runtime/
 pediatria_results/
 videos/
 *.pyc
+
+# Build/release Nuitka (binarios grandes, nunca versionar)
+build/
+dist/
+release/
