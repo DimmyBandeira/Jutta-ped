@@ -15,7 +15,12 @@ from urllib.parse import urlsplit, urlunsplit
 import cv2
 
 from modulo.pediatria.detector_mvp import PediatricDetection, PediatricsDetectorMvpRunner
-from src.jutta_ped.service.pediatria_service import PediatriaService, PediatriaServiceConfig
+from src.jutta_ped.service.pediatria_service import (
+    PediatriaService,
+    PediatriaServiceConfig,
+    cpu_economical_overrides,
+)
+from src.jutta_ped.service.telemetry import SessionTelemetry
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_MODEL_PATH = ROOT / "src" / "models" / "pediatria_child_detector_v6_jutta_openvino_model"
@@ -245,11 +250,14 @@ class PediatriaHeadlessSession:
             summary_path=str(self.evidence_dir / "session_summary.json"),
         )
         self.device, self.device_reason = resolve_device(config.force_cpu, config.requested_device)
+        perf_overrides = cpu_economical_overrides(self.device)
         self.service = PediatriaService(
             PediatriaServiceConfig(
                 specialist_model_path=DEFAULT_MODEL_PATH,
                 person_model_path=DEFAULT_PERSON_MODEL_PATH,
                 device=self.device,
+                detector_stride_frames=perf_overrides["detector_stride_frames"] or 1,
+                specialist_budget_per_frame=perf_overrides["specialist_budget_per_frame"],
             ),
             runner_factory=PediatricsDetectorMvpRunner,
             crop_pipeline_factory=_load_person_crop_pipeline,
@@ -268,6 +276,7 @@ class PediatriaHeadlessSession:
         self.evidence_error_counts: Counter[str] = Counter()
         self.person_detector_zero = 0
         self.latch = SimpleAlertLatch(config.cooldown_seconds)
+        self.telemetry = SessionTelemetry()
 
     def start(self) -> None:
         self.evidence_dir.mkdir(parents=True, exist_ok=True)
@@ -298,10 +307,13 @@ class PediatriaHeadlessSession:
         assert self.capture is not None
         try:
             while not self.stop_event.is_set():
+                loop_started = time.perf_counter()
                 ok, frame = self.capture.read()
                 if not ok or frame is None:
                     break
                 self._process_frame(frame)
+                self.telemetry.capture_loop_ms.add((time.perf_counter() - loop_started) * 1000.0)
+                self.telemetry.sample_resources()
         except Exception as exc:
             with self.lock:
                 self.state.last_error = str(exc)
@@ -317,6 +329,7 @@ class PediatriaHeadlessSession:
         clean_frame = frame.copy()
         result = self.service.process_frame(clean_frame, frame_id=frame_id)
         self.latencies.append(result.latency_ms)
+        self.telemetry.process_frame_ms.add(result.latency_ms)
         state = result.state
         resolved = result.resolved_detections
         person_detections = result.person_detections
@@ -367,12 +380,19 @@ class PediatriaHeadlessSession:
         metadata = self._event_payload(event_type, state, child, detections, person_detections, evidence_paths, errors, popup_emitido, suppression_reason)
         metadata["metadata_path"] = str(paths["metadata"])
         paths["metadata"].parent.mkdir(parents=True, exist_ok=True)
-        paths["metadata"].write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
+        metadata_text = json.dumps(metadata, indent=2, ensure_ascii=False)
+        paths["metadata"].write_text(metadata_text, encoding="utf-8")
+        self.telemetry.disk_usage.record_text("metadata_bytes", metadata_text)
         evidence_paths["metadata"] = str(paths["metadata"])
         return evidence_paths, errors
 
-    @staticmethod
-    def _write_image(path: Path, image: Any, errors: list[str], label: str) -> bool:
+    _DISK_USAGE_CATEGORY_BY_LABEL = {
+        "frame": "evidence_frames_bytes",
+        "annotated": "evidence_annotated_bytes",
+        "crop": "evidence_crops_bytes",
+    }
+
+    def _write_image(self, path: Path, image: Any, errors: list[str], label: str) -> bool:
         try:
             if image is None or not hasattr(image, "size") or image.size == 0:
                 errors.append(f"{label}:empty_image")
@@ -381,7 +401,12 @@ class PediatriaHeadlessSession:
             if not cv2.imwrite(str(path), image):
                 errors.append(f"{label}:imwrite_false")
                 return False
-            return path.exists()
+            if not path.exists():
+                return False
+            category = self._DISK_USAGE_CATEGORY_BY_LABEL.get(label)
+            if category is not None:
+                self.telemetry.disk_usage.record_file(category, path)
+            return True
         except Exception as exc:
             errors.append(f"{label}:{type(exc).__name__}:{exc}")
             return False
@@ -391,6 +416,13 @@ class PediatriaHeadlessSession:
         best_child = best_detection(detections, "child")
         best_any = best_detection(detections)
         crop_detection = choose_crop_detection(child, detections, person_detections)
+        specialist_classification = None
+        detector_specialist_profile = None
+        crop_pipeline = getattr(self.service, "crop_pipeline", None)
+        if crop_pipeline is not None:
+            detector_specialist_profile = dict(crop_pipeline.last_frame_meta)
+            if crop_detection is not None:
+                specialist_classification = crop_pipeline.last_trace.get(crop_detection.track_id)
         return {
             "event_type": event_type,
             "timestamp": datetime.now().isoformat(timespec="milliseconds"),
@@ -410,6 +442,8 @@ class PediatriaHeadlessSession:
             "child_confidence": best_child.confidence if best_child is not None else None,
             "child_bbox_xyxy": list(best_child.bbox_xyxy) if best_child is not None else None,
             "crop_bbox_xyxy": list(crop_detection.bbox_xyxy) if crop_detection is not None else None,
+            "specialist_classification": specialist_classification,
+            "detector_specialist_profile": detector_specialist_profile,
             "requested_device": self.config.requested_device,
             "resolved_device": self.device,
             "device_usado": self.device,
@@ -428,15 +462,18 @@ class PediatriaHeadlessSession:
 
     def _append_event(self, payload: dict[str, Any]) -> None:
         self._record_summary(payload)
-        self.events_log_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.events_log_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        self._append_events_jsonl_line(payload)
 
     def _append_session_log(self, payload: dict[str, Any]) -> None:
         item = {"created_at": datetime.now().isoformat(timespec="milliseconds"), **payload}
+        self._append_events_jsonl_line(item)
+
+    def _append_events_jsonl_line(self, payload: dict[str, Any]) -> None:
         self.events_log_path.parent.mkdir(parents=True, exist_ok=True)
+        line = json.dumps(payload, ensure_ascii=False) + "\n"
         with self.events_log_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(item, ensure_ascii=False) + "\n")
+            handle.write(line)
+        self.telemetry.disk_usage.record_text("events_jsonl_bytes", line)
 
     def _record_summary(self, payload: dict[str, Any]) -> None:
         self.event_counts[str(payload.get("event_type") or "unknown")] += 1
@@ -449,6 +486,7 @@ class PediatriaHeadlessSession:
             self.evidence_error_counts[str(error)] += 1
 
     def _build_summary(self) -> dict[str, Any]:
+        crop_pipeline = getattr(self.service, "crop_pipeline", None)
         return {
             "session_id": self.session_id,
             "camera_id": self.camera_id,
@@ -472,6 +510,13 @@ class PediatriaHeadlessSession:
             "evidence_error_distribution": dict(self.evidence_error_counts),
             "stable_state_counts": dict(self.stable_state_counts),
             "average_latency_ms": round(sum(self.latencies) / len(self.latencies), 2) if self.latencies else None,
+            "specialist_classification_stats": dict(crop_pipeline.stats) if crop_pipeline is not None else None,
+            "resources": self.telemetry.resources_snapshot(),
+            "performance": self.telemetry.performance_snapshot(
+                frames_processed=self.state.frames_processed,
+                extra=crop_pipeline.timing_snapshot() if crop_pipeline is not None else None,
+            ),
+            "disk_usage": self.telemetry.disk_usage_snapshot(),
         }
 
     def _finish(self, status: str) -> None:
@@ -486,14 +531,19 @@ class PediatriaHeadlessSession:
     def _write_summary_files(self) -> None:
         summary = self._build_summary()
         self.evidence_dir.mkdir(parents=True, exist_ok=True)
-        (self.evidence_dir / "session_summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
-        with (self.evidence_dir / "session_summary.csv").open("w", encoding="utf-8", newline="") as handle:
+        summary_text = json.dumps(summary, indent=2, ensure_ascii=False)
+        (self.evidence_dir / "session_summary.json").write_text(summary_text, encoding="utf-8")
+        self.telemetry.disk_usage.record_text("session_summary_bytes", summary_text)
+        csv_path = self.evidence_dir / "session_summary.csv"
+        with csv_path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle)
             writer.writerow(["metric", "value"])
             for key, value in summary.items():
                 if isinstance(value, (dict, list)):
                     value = json.dumps(value, ensure_ascii=False)
                 writer.writerow([key, value])
+        self.telemetry.disk_usage.record_file("session_summary_bytes", csv_path)
+        self.telemetry.write_resource_samples(self.evidence_dir / "resource_samples.jsonl")
 
     def _stop_capture(self) -> None:
         if self.capture is not None:

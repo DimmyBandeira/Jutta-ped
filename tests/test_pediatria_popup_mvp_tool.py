@@ -20,6 +20,7 @@ from tools.run_pediatria_popup_mvp import (
     source_display_name,
 )
 from modulo.pediatria.detector_mvp import PediatricDetection, PediatricsDetectorMvpRunner
+from src.jutta_ped.service.telemetry import SessionTelemetry
 
 
 def test_popup_demo_defaults_to_v6_jutta_and_is_standalone() -> None:
@@ -324,6 +325,8 @@ def test_event_evidence_writes_frame_metadata_and_session_summary(tmp_path: Path
     demo.model_path = Path("src/models/pediatria_child_detector_v6_jutta_openvino_model")
     demo.person_model_path = Path("src/models/yolo11n_openvino_model")
     demo.dataset_collector = None
+    demo.crop_pipeline = None
+    demo.telemetry = SessionTelemetry()
     demo.session_event_counts = Counter()
     demo.session_status_counts = Counter()
     demo.session_suppression_counts = Counter()

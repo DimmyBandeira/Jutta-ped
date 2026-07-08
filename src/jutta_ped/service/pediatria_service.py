@@ -13,6 +13,29 @@ from modulo.pediatria.detector_mvp import (
     resolve_role_conflicts,
 )
 
+_KEEP_CURRENT = object()
+
+# Perfil "CPU economico": detector roda a cada 2 frames analisados e o
+# especialista tem teto de 3 classificacoes por frame. Usado tanto pela UI
+# (start_analysis / fallback GPU->CPU) quanto pelo servico headless
+# (PediatriaHeadlessSession), para as duas camadas nao divergirem.
+_CPU_DETECTOR_STRIDE_FRAMES = 2
+_CPU_SPECIALIST_BUDGET_PER_FRAME = 3
+
+
+def cpu_economical_overrides(device: str) -> dict[str, int | None]:
+    """Cadencias de detector/especialista recomendadas para o device.
+
+    CPU ganha stride>1 e teto de especialista; qualquer outro device
+    (cuda:*, etc.) mantem o comportamento anterior (sem stride, sem teto).
+    """
+    if str(device or "").strip().lower() == "cpu":
+        return {
+            "detector_stride_frames": _CPU_DETECTOR_STRIDE_FRAMES,
+            "specialist_budget_per_frame": _CPU_SPECIALIST_BUDGET_PER_FRAME,
+        }
+    return {"detector_stride_frames": 1, "specialist_budget_per_frame": None}
+
 
 @dataclass(frozen=True)
 class PediatriaServiceConfig:
@@ -25,6 +48,13 @@ class PediatriaServiceConfig:
     crop_cache_frames: int = 12
     weak_child_candidates: bool = True
     weak_child_confidence: float = 0.03
+    # Detector de pessoa roda a cada N frames analisados (1 = todo frame).
+    # Em CPU, >1 reduz o custo dominante do pipeline sem desligar o crop.
+    detector_stride_frames: int = 1
+    # Teto de chamadas ao especialista por frame analisado. None = sem teto
+    # (comportamento anterior). Em cenas cheias evita gastar CPU igualmente
+    # em todo track elegivel; o excedente e adiado e priorizado depois.
+    specialist_budget_per_frame: int | None = None
 
 
 @dataclass(frozen=True)
@@ -67,6 +97,11 @@ class PediatriaService:
         self.analyzer = self._analyzer_factory()
         self.identity_stabilizer = self._identity_stabilizer_factory()
         self.weak_child_promoter = self._weak_child_promoter_factory()
+        # Tracks relevantes para alerta na ultima observacao (crianca
+        # sozinha/separada/incerta e o adulto mais proximo dela). Usado para
+        # priorizar o orcamento do especialista no PROXIMO frame: o que
+        # quase virou alerta nao pode ficar sem reclassificar por budget.
+        self._priority_track_ids: set[int] = set()
 
     @property
     def model_names(self) -> dict[int, str]:
@@ -93,10 +128,25 @@ class PediatriaService:
         self.analyzer = self._analyzer_factory()
         self.identity_stabilizer.reset()
         self.weak_child_promoter.reset()
+        self._priority_track_ids = set()
         if self.crop_pipeline is not None:
             self.crop_pipeline.reset()
 
-    def set_device(self, device: str) -> None:
+    def set_device(
+        self,
+        device: str,
+        *,
+        detector_stride_frames: int | None = None,
+        specialist_budget_per_frame: Any = _KEEP_CURRENT,
+    ) -> None:
+        """Troca o device do modelo. Opcionalmente reajusta as cadencias de
+        detector/especialista (ex.: fallback GPU->CPU deve adotar o perfil
+        economico de CPU, nao manter os valores do device anterior).
+
+        `specialist_budget_per_frame` aceita `None` como valor real ("sem
+        teto"), entao usa um sentinel proprio para distinguir de
+        "nao alterar" no default.
+        """
         self.config = PediatriaServiceConfig(
             specialist_model_path=self.config.specialist_model_path,
             person_model_path=self.config.person_model_path,
@@ -107,7 +157,36 @@ class PediatriaService:
             crop_cache_frames=self.config.crop_cache_frames,
             weak_child_candidates=self.config.weak_child_candidates,
             weak_child_confidence=self.config.weak_child_confidence,
+            detector_stride_frames=(
+                detector_stride_frames
+                if detector_stride_frames is not None
+                else self.config.detector_stride_frames
+            ),
+            specialist_budget_per_frame=(
+                self.config.specialist_budget_per_frame
+                if specialist_budget_per_frame is _KEEP_CURRENT
+                else specialist_budget_per_frame
+            ),
         )
+
+    _ALERT_RISK_STATES = {"CHILD_ALONE", "CHILD_SEPARATED", "UNCERTAIN"}
+
+    @classmethod
+    def _extract_priority_track_ids(cls, state: Any) -> set[int]:
+        """Tracks que merecem o especialista primeiro no PROXIMO frame.
+
+        Crianca em estado de risco (sozinha/separada/incerta) e o adulto
+        mais proximo dela nao podem ficar sem reclassificar so porque o
+        orcamento do especialista foi curto nessa cena.
+        """
+        priority: set[int] = set()
+        for child in getattr(state, "children", []):
+            if child.state not in cls._ALERT_RISK_STATES:
+                continue
+            priority.add(child.child_track_id)
+            if child.nearest_adult_track_id is not None:
+                priority.add(child.nearest_adult_track_id)
+        return priority
 
     def process_frame(self, frame: Any, *, frame_id: int) -> PediatriaFrameResult:
         if self.runner is None:
@@ -130,6 +209,9 @@ class PediatriaService:
                 person_confidence=self.config.person_confidence,
                 specialist_accept_confidence=self.config.confidence,
                 cache_ttl_frames=self.config.crop_cache_frames,
+                detector_stride_frames=self.config.detector_stride_frames,
+                specialist_budget_per_frame=self.config.specialist_budget_per_frame,
+                priority_track_ids=self._priority_track_ids,
             )
         else:
             result = self.runner.model.track(
@@ -184,6 +266,7 @@ class PediatriaService:
             for item in resolved
         ]
         state = self.analyzer.observe(tracks)
+        self._priority_track_ids = self._extract_priority_track_ids(state)
         latency_ms = (time.perf_counter() - started) * 1000.0
         return PediatriaFrameResult(
             parsed_detections=parsed_detections,

@@ -69,7 +69,9 @@ from src.jutta_ped.service import launcher as service_launcher
 from src.jutta_ped.service.pediatria_service import (
     PediatriaService,
     PediatriaServiceConfig,
+    cpu_economical_overrides,
 )
+from src.jutta_ped.service.telemetry import RunningStat, SessionTelemetry
 
 SOURCE_FILE = "Arquivo de video"
 SOURCE_URL = "URL de camera"
@@ -109,16 +111,31 @@ def resolve_inference_device(requested: str) -> tuple[str, str]:
         return "cpu", f"cuda_check_falhou_{type(exc).__name__}"
 
 
-def performance_profile_for_device(device: str, source_fps: float) -> dict[str, int | float | str]:
-    """Perfil conservador sem pular tracking: CPU reduz somente ritmo de leitura/display."""
+def performance_profile_for_device(device: str, source_fps: float) -> dict[str, int | float | str | None]:
+    """Perfil operacional por device: 3 cadencias desacopladas.
 
+    - display_fps: com que frequencia a UI le/renderiza um frame (loop
+      unico, sempre roda para o video nao travar).
+    - detector_stride_frames: a cada quantos frames ANALISADOS o detector de
+      pessoa de fato roda (>1 reaproveita a ultima leitura nos demais,
+      dentro de PersonCropSpecialistPipeline).
+    - specialist_budget_per_frame: teto de chamadas ao especialista por
+      frame analisado (None = sem teto). Em CPU, cenas com muitos tracks
+      elegiveis para reclassificar sao priorizadas em vez de gastar em todo
+      mundo igualmente.
+
+    O crop-pipeline continua sendo o caminho principal de acuracia em
+    qualquer perfil: essas cadencias so controlam a FREQUENCIA das chamadas
+    caras (detector/especialista), nunca removem o estagio.
+    """
     is_cpu = str(device or "").lower() == "cpu"
     display_fps = 12.0 if is_cpu else min(max(float(source_fps or 30.0), 1.0), 30.0)
+    overrides = cpu_economical_overrides(device)
     return {
         "device": device,
-        "target_analysis_fps": display_fps,
         "display_fps": display_fps,
-        "analysis_stride": 1,
+        "detector_stride_frames": overrides["detector_stride_frames"],
+        "specialist_budget_per_frame": overrides["specialist_budget_per_frame"],
     }
 
 
@@ -902,15 +919,69 @@ class WeakChildCandidatePromoter:
 
 
 @dataclass
-class CropRoleCacheEntry:
+class TrackClassificationState:
+    """Estado persistente do especialista para um track de pessoa.
+
+    Substitui o antigo cache "por frame" (`CropRoleCacheEntry`): alem de
+    bbox/role/confidence, guarda sinais de estabilidade para decidir quando
+    vale a pena gastar outra chamada ao especialista.
+    """
+
+    track_id: int
+    bbox_xyxy: tuple[float, float, float, float]
     role: str
     confidence: float
-    bbox_xyxy: tuple[float, float, float, float]
-    frame_index: int
+    last_classified_frame: int
+    last_seen_frame: int
+    stable_hits: int = 0
+    pending_refresh: bool = False
 
 
 class PersonCropSpecialistPipeline:
-    """Detecta pessoas no frame e deixa o especialista decidir no crop."""
+    """Detecta pessoas no frame e deixa o especialista decidir no crop.
+
+    O especialista roda POR TRACK, nao por frame: cada pessoa rastreada tem
+    um `TrackClassificationState` reaproveitado enquanto nada relevante
+    mudou (`_gate`). Isso preserva o ganho de acuracia do crop (o
+    especialista continua sendo a unica fonte do papel adult/child) mas
+    reduz bastante o numero de chamadas em CPU, que e o custo dominante do
+    pipeline.
+    """
+
+    # TTL base (frames) para reclassificar um track ja confirmado.
+    BASE_TTL_FRAMES = 12
+    # Tracks 'child'/'uncertain' sao alert-relevantes: TTL bem mais curto,
+    # mesmo que o TTL base configurado seja maior.
+    CHILD_OR_WEAK_TTL_FRAMES = 4
+    # Adultos confirmados repetidamente podem esperar bem mais entre
+    # reclassificacoes: sao o caso mais comum e o de menor risco.
+    STABLE_ADULT_TTL_FRAMES = 48
+    STABLE_ADULT_HITS_REQUIRED = 3
+    STABLE_ADULT_MIN_CONFIDENCE = 0.50
+    # Geometria: abaixo disso a bbox mudou demais para confiar no cache.
+    MIN_IOU_FOR_REUSE = 0.35
+    # Fora dessa faixa de variacao de area (crop ficou muito maior/menor),
+    # forca reclassificacao mesmo com IoU aceitavel.
+    MAX_AREA_RATIO_CHANGE = 1.6
+    # Track ausente por mais que isso e tratado como "reapareceu".
+    REAPPEAR_GAP_FRAMES = 5
+    # Abaixo disso nao vale gastar o especialista: crop pequeno demais para
+    # ser confiavel.
+    MIN_CROP_SIDE_PX = 24
+    # Entradas de cache sem nenhuma atividade por muito tempo sao podadas
+    # para o dicionario nao crescer sem limite numa sessao longa.
+    STALE_PRUNE_FRAMES = 300
+
+    # Ordem de prioridade quando o numero de tracks elegiveis para o
+    # especialista excede o orcamento por frame (menor valor = mais urgente).
+    _PRIORITY_RANK = {
+        "weak_previous_classification": 1,
+        "new_track": 2,
+        "track_reappeared": 3,
+        "size_changed": 4,
+        "bbox_shifted": 5,
+        "ttl_expired": 6,
+    }
 
     def __init__(
         self,
@@ -923,7 +994,23 @@ class PersonCropSpecialistPipeline:
         self.person_model = self._load_detect_model(person_model_path)
         self.specialist_model = specialist_model
         self.specialist_names = specialist_names
-        self._cache: dict[int, CropRoleCacheEntry] = {}
+        self._cache: dict[int, TrackClassificationState] = {}
+        # Ultima leitura real do detector de pessoa, reaproveitada nos
+        # frames em que o detector e pulado (detector_stride_frames > 1).
+        self._last_persons: list[PediatricDetection] | None = None
+        self._last_detector_frame: int | None = None
+        # Rastro da ultima chamada: track_id -> metadados de decisao, usado
+        # para enriquecer a evidencia (fonte da classificacao, idade do
+        # cache, motivo do refresh, prioridade).
+        self.last_trace: dict[int, dict[str, Any]] = {}
+        # Metadados de nivel-de-frame (nao por track): se o detector rodou,
+        # quantos tracks elegiveis couberam no orcamento do especialista etc.
+        self.last_frame_meta: dict[str, Any] = {}
+        self.stats: Counter[str] = Counter()
+        # Tempos agregados (O(1) de memoria) do detector de pessoa e do
+        # especialista, para telemetria de performance por sessao.
+        self.detector_ms = RunningStat()
+        self.specialist_ms = RunningStat()
 
     @staticmethod
     def _load_detect_model(model_path: Path) -> Any:
@@ -935,6 +1022,19 @@ class PersonCropSpecialistPipeline:
 
     def reset(self) -> None:
         self._cache.clear()
+        self._last_persons = None
+        self._last_detector_frame = None
+        self.last_trace = {}
+        self.last_frame_meta = {}
+        self.stats = Counter()
+        self.detector_ms = RunningStat()
+        self.specialist_ms = RunningStat()
+
+    def timing_snapshot(self) -> dict[str, float | None]:
+        return {
+            **self.detector_ms.snapshot(avg_key="avg_person_detector_ms", peak_key="peak_person_detector_ms"),
+            **self.specialist_ms.snapshot(avg_key="avg_specialist_ms", peak_key="peak_specialist_ms"),
+        }
 
     def detect_and_classify(
         self,
@@ -945,33 +1045,61 @@ class PersonCropSpecialistPipeline:
         person_confidence: float,
         specialist_accept_confidence: float,
         cache_ttl_frames: int,
+        detector_stride_frames: int = 1,
+        specialist_budget_per_frame: int | None = None,
+        priority_track_ids: set[int] | None = None,
     ) -> tuple[list[PediatricDetection], list[PediatricDetection]]:
-        result = self.person_model.track(
+        persons, detector_reused = self._run_or_reuse_detector(
             frame,
-            persist=True,
-            conf=person_confidence,
+            frame_index=frame_index,
             device=device,
-            tracker="bytetrack.yaml",
-            verbose=False,
-        )[0]
-        persons = self._parse_person_result(result)
-        detections: list[PediatricDetection] = []
+            person_confidence=person_confidence,
+            detector_stride_frames=max(1, int(detector_stride_frames)),
+        )
+        self._prune_stale(frame_index)
+        self.last_trace = {}
+
+        # Fase 1: gate por track. Separa quem so reusa/pula (barato, decide
+        # na hora) de quem e elegivel para o especialista ("classify").
+        immediate: dict[int, tuple[str, float, TrackClassificationState | None, str | None, int | None]] = {}
+        eligible: list[tuple[PediatricDetection, TrackClassificationState | None, str | None]] = []
         for person in persons:
-            cached = self._get_cached_role(
-                person,
-                frame_index=frame_index,
-                cache_ttl_frames=cache_ttl_frames,
-            )
-            if cached is not None:
-                detections.append(
-                    PediatricDetection(
-                        person.bbox_xyxy,
-                        cached.role,
-                        cached.confidence,
-                        person.track_id,
-                    )
-                )
+            state = self._cache.get(person.track_id)
+            decision, reason = self._gate(person, state, frame_index, cache_ttl_frames)
+            if decision == "classify":
+                eligible.append((person, state, reason))
                 continue
+            if decision == "reuse":
+                assert state is not None  # _gate so retorna "reuse" com estado existente
+                role, confidence = state.role, state.confidence
+                cache_age = frame_index - state.last_classified_frame
+                state.last_seen_frame = frame_index
+                source = "cache_reuse"
+            else:  # "skip_cheap": crop pequeno demais, nao vale a pena classificar
+                if state is not None:
+                    role, confidence = state.role, state.confidence
+                    state.last_seen_frame = frame_index
+                    cache_age = frame_index - state.last_classified_frame
+                else:
+                    role, confidence = "uncertain", 0.0
+                    cache_age = None
+                source = "skipped_small_crop"
+            immediate[person.track_id] = (source, confidence, state, reason, cache_age)
+
+        # Fase 2: orcamento. Se cabe todo mundo, roda todo mundo; senao,
+        # prioriza e adia o resto (mantem o ultimo estado conhecido).
+        if specialist_budget_per_frame is not None and len(eligible) > specialist_budget_per_frame:
+            eligible.sort(key=lambda item: self._priority_score(item[0], item[2], priority_track_ids))
+            run_now = eligible[: specialist_budget_per_frame]
+            deferred = eligible[specialist_budget_per_frame:]
+        else:
+            run_now = eligible
+            deferred = []
+
+        # Fase 3: aplica o especialista so em run_now; deferred reusa o que
+        # ja existia (ou fica "uncertain" se for track novo sem cache ainda).
+        role_by_track: dict[int, tuple[str, float]] = {}
+        for person, state, reason in run_now:
             crop = crop_frame(frame, person.bbox_xyxy)
             if crop is None:
                 role, confidence = "uncertain", 0.0
@@ -981,21 +1109,211 @@ class PersonCropSpecialistPipeline:
                     device=device,
                     accept_confidence=specialist_accept_confidence,
                 )
-            self._cache[person.track_id] = CropRoleCacheEntry(
-                role=role,
-                confidence=confidence,
-                bbox_xyxy=person.bbox_xyxy,
-                frame_index=frame_index,
-            )
-            detections.append(
-                PediatricDetection(
-                    person.bbox_xyxy,
-                    role,
-                    confidence,
-                    person.track_id,
-                )
-            )
+            new_state = self._update_cache(person, role, confidence, frame_index, state)
+            role_by_track[person.track_id] = (role, confidence)
+            self.stats["specialist_inference"] += 1
+            self.last_trace[person.track_id] = {
+                "source": "specialist_inference",
+                "refresh_reason": reason,
+                "track_priority_reason": reason,
+                "cache_age_frames": 0,
+                "stable_hits": new_state.stable_hits,
+                "specialist_deferred_by_budget": False,
+            }
+
+        for person, state, reason in deferred:
+            if state is not None:
+                role, confidence = state.role, state.confidence
+                state.last_seen_frame = frame_index
+                cache_age = frame_index - state.last_classified_frame
+            else:
+                role, confidence = "uncertain", 0.0
+                cache_age = None
+            role_by_track[person.track_id] = (role, confidence)
+            self.stats["specialist_deferred_by_budget"] += 1
+            self.last_trace[person.track_id] = {
+                "source": "specialist_deferred_by_budget",
+                "refresh_reason": reason,
+                "track_priority_reason": reason,
+                "cache_age_frames": cache_age,
+                "stable_hits": state.stable_hits if state is not None else 0,
+                "specialist_deferred_by_budget": True,
+            }
+
+        for track_id, (source, confidence, state, reason, cache_age) in immediate.items():
+            self.stats[source] += 1
+            role = state.role if state is not None else "uncertain"
+            role_by_track[track_id] = (role, confidence)
+            self.last_trace[track_id] = {
+                "source": source,
+                "refresh_reason": reason,
+                "track_priority_reason": reason,
+                "cache_age_frames": cache_age,
+                "stable_hits": state.stable_hits if state is not None else 0,
+                "specialist_deferred_by_budget": False,
+            }
+
+        self.last_frame_meta = {
+            "detector_reused_frame": detector_reused,
+            "detector_stride_used": max(1, int(detector_stride_frames)),
+            "specialist_budget_configured": specialist_budget_per_frame,
+            "specialist_eligible_count": len(eligible),
+            "specialist_budget_used": len(run_now),
+            "specialist_deferred_count": len(deferred),
+        }
+
+        detections = [
+            PediatricDetection(person.bbox_xyxy, *role_by_track[person.track_id], person.track_id)
+            for person in persons
+        ]
         return detections, persons
+
+    def _run_or_reuse_detector(
+        self,
+        frame: Any,
+        *,
+        frame_index: int,
+        device: str,
+        person_confidence: float,
+        detector_stride_frames: int,
+    ) -> tuple[list[PediatricDetection], bool]:
+        """Roda o detector de pessoa ou reaproveita a ultima leitura.
+
+        Em CPU, `detector_stride_frames > 1` faz o detector rodar so a cada
+        N chamadas; nos frames intermediarios, as ultimas bboxes/tracks sao
+        reutilizadas tal como estavam (seguro: o gate do especialista compara
+        geometria contra o cache, e bbox identica nunca dispara refresh por
+        engano).
+        """
+        should_run = (
+            self._last_persons is None
+            or self._last_detector_frame is None
+            or detector_stride_frames <= 1
+            or (frame_index - self._last_detector_frame) >= detector_stride_frames
+        )
+        if not should_run:
+            return list(self._last_persons or []), True
+
+        detector_started = time.perf_counter()
+        result = self.person_model.track(
+            frame,
+            persist=True,
+            conf=person_confidence,
+            device=device,
+            tracker="bytetrack.yaml",
+            verbose=False,
+        )[0]
+        self.detector_ms.add((time.perf_counter() - detector_started) * 1000.0)
+        persons = self._parse_person_result(result)
+        self._last_persons = persons
+        self._last_detector_frame = frame_index
+        return persons, False
+
+    def _priority_score(
+        self,
+        person: PediatricDetection,
+        reason: str | None,
+        priority_track_ids: set[int] | None,
+    ) -> tuple[int, float]:
+        """Menor score = mais urgente. Usado para cortar no orcamento.
+
+        `reason` e o motivo que o `_gate` ja calculou para essa decisao
+        ("new_track", "bbox_shifted", "ttl_expired", ...) -- reaproveitado
+        aqui em vez de reinferido, para nao perder a granularidade do gate.
+        """
+        if priority_track_ids and person.track_id in priority_track_ids:
+            return (-1, -person.confidence)
+        reason_rank = self._PRIORITY_RANK.get(reason or "ttl_expired", 7)
+        return (reason_rank, -person.confidence)
+
+    def _gate(
+        self,
+        person: PediatricDetection,
+        state: TrackClassificationState | None,
+        frame_index: int,
+        base_ttl_frames: int,
+    ) -> tuple[str, str | None]:
+        """Decide se reusa cache, pula barato ou chama o especialista.
+
+        Retorna (decisao, motivo) com decisao em
+        {"reuse", "classify", "skip_cheap"}.
+        """
+        width = person.bbox_xyxy[2] - person.bbox_xyxy[0]
+        height = person.bbox_xyxy[3] - person.bbox_xyxy[1]
+        if width < self.MIN_CROP_SIDE_PX or height < self.MIN_CROP_SIDE_PX:
+            return "skip_cheap", "crop_too_small"
+
+        if state is None:
+            return "classify", "new_track"
+
+        if frame_index - state.last_seen_frame > self.REAPPEAR_GAP_FRAMES:
+            return "classify", "track_reappeared"
+
+        if state.pending_refresh:
+            return "classify", "weak_previous_classification"
+
+        if bbox_iou(person.bbox_xyxy, state.bbox_xyxy) < self.MIN_IOU_FOR_REUSE:
+            return "classify", "bbox_shifted"
+
+        area_ratio = self._area_ratio(person.bbox_xyxy, state.bbox_xyxy)
+        if area_ratio > self.MAX_AREA_RATIO_CHANGE or area_ratio < 1.0 / self.MAX_AREA_RATIO_CHANGE:
+            return "classify", "size_changed"
+
+        ttl = self._effective_ttl(state, base_ttl_frames)
+        if frame_index - state.last_classified_frame > ttl:
+            return "classify", "ttl_expired"
+
+        return "reuse", None
+
+    def _effective_ttl(self, state: TrackClassificationState, base_ttl_frames: int) -> int:
+        if state.role != "adult" or state.confidence < self.STABLE_ADULT_MIN_CONFIDENCE:
+            return min(base_ttl_frames, self.CHILD_OR_WEAK_TTL_FRAMES)
+        if state.stable_hits >= self.STABLE_ADULT_HITS_REQUIRED:
+            return max(base_ttl_frames, self.STABLE_ADULT_TTL_FRAMES)
+        return base_ttl_frames
+
+    def _update_cache(
+        self,
+        person: PediatricDetection,
+        role: str,
+        confidence: float,
+        frame_index: int,
+        previous: TrackClassificationState | None,
+    ) -> TrackClassificationState:
+        is_confirmed_adult = role == "adult" and confidence >= self.STABLE_ADULT_MIN_CONFIDENCE
+        stable_hits = 0
+        if is_confirmed_adult:
+            stable_hits = (previous.stable_hits + 1) if (previous is not None and previous.role == "adult") else 1
+        state = TrackClassificationState(
+            track_id=person.track_id,
+            bbox_xyxy=person.bbox_xyxy,
+            role=role,
+            confidence=confidence,
+            last_classified_frame=frame_index,
+            last_seen_frame=frame_index,
+            stable_hits=stable_hits,
+            pending_refresh=(role == "uncertain" or confidence < 0.35),
+        )
+        self._cache[person.track_id] = state
+        return state
+
+    def _prune_stale(self, frame_index: int) -> None:
+        stale = [
+            track_id
+            for track_id, state in self._cache.items()
+            if frame_index - state.last_seen_frame > self.STALE_PRUNE_FRAMES
+        ]
+        for track_id in stale:
+            self._cache.pop(track_id, None)
+
+    @staticmethod
+    def _area_ratio(
+        current: tuple[float, float, float, float],
+        previous: tuple[float, float, float, float],
+    ) -> float:
+        current_area = max(1.0, (current[2] - current[0]) * (current[3] - current[1]))
+        previous_area = max(1.0, (previous[2] - previous[0]) * (previous[3] - previous[1]))
+        return current_area / previous_area
 
     def _parse_person_result(self, result: Any) -> list[PediatricDetection]:
         boxes = result.boxes
@@ -1027,22 +1345,6 @@ class PersonCropSpecialistPipeline:
             )
         return persons
 
-    def _get_cached_role(
-        self,
-        person: PediatricDetection,
-        *,
-        frame_index: int,
-        cache_ttl_frames: int,
-    ) -> CropRoleCacheEntry | None:
-        cached = self._cache.get(person.track_id)
-        if cached is None:
-            return None
-        if frame_index - cached.frame_index > cache_ttl_frames:
-            return None
-        if bbox_iou(person.bbox_xyxy, cached.bbox_xyxy) < 0.35:
-            return None
-        return cached
-
     def _classify_crop(
         self,
         crop: Any,
@@ -1050,12 +1352,14 @@ class PersonCropSpecialistPipeline:
         device: str,
         accept_confidence: float,
     ) -> tuple[str, float]:
+        specialist_started = time.perf_counter()
         result = self.specialist_model.predict(
             crop,
             conf=0.03,
             device=device,
             verbose=False,
         )[0]
+        self.specialist_ms.add((time.perf_counter() - specialist_started) * 1000.0)
         boxes = result.boxes
         if boxes is None or len(boxes) == 0:
             return "uncertain", 0.0
@@ -1297,7 +1601,7 @@ class PediatriaPopupDemo(QMainWindow):
         self.weak_child_promote_frames = max(1, weak_child_promote_frames)
         self.requested_device = "cpu" if force_cpu_default else device
         self.device, self.device_reason = resolve_inference_device(self.requested_device)
-        self.performance_profile: dict[str, int | float | str] = {}
+        self.performance_profile: dict[str, int | float | str | None] = {}
         self.runner: PediatricsDetectorMvpRunner | None = None
         self.crop_pipeline: PersonCropSpecialistPipeline | None = None
         self.service: PediatriaService | None = None
@@ -1328,6 +1632,7 @@ class PediatriaPopupDemo(QMainWindow):
         self.session_suppression_counts: Counter[str] = Counter()
         self.session_evidence_error_counts: Counter[str] = Counter()
         self.session_person_detector_zero = 0
+        self.telemetry = SessionTelemetry()
         self.voice = MvpVoiceAnnouncer(
             enabled=voice_enabled,
             repeat_interval_seconds=voice_repeat_seconds,
@@ -1617,6 +1922,9 @@ class PediatriaPopupDemo(QMainWindow):
                 str(self.person_model_path),
                 self.person_model_path,
             )
+            assert capture is not None  # capture.isOpened() ja validou acima
+            fps = capture.get(cv2.CAP_PROP_FPS) or 30.0
+            self.performance_profile = performance_profile_for_device(self.device, fps)
             self.status.setText("Preparando analise local...")
             QApplication.processEvents()
             self.service = PediatriaService(
@@ -1630,6 +1938,12 @@ class PediatriaPopupDemo(QMainWindow):
                     crop_cache_frames=self.crop_cache_frames,
                     weak_child_candidates=self.weak_child_candidates_default,
                     weak_child_confidence=self.weak_child_confidence,
+                    detector_stride_frames=int(self.performance_profile["detector_stride_frames"] or 1),
+                    specialist_budget_per_frame=(
+                        int(self.performance_profile["specialist_budget_per_frame"])
+                        if self.performance_profile["specialist_budget_per_frame"] is not None
+                        else None
+                    ),
                 ),
                 runner_factory=PediatricsDetectorMvpRunner,
                 crop_pipeline_factory=PersonCropSpecialistPipeline,
@@ -1670,6 +1984,7 @@ class PediatriaPopupDemo(QMainWindow):
         self.latencies.clear()
         self._resolved_frames_by_camera.clear()
         self._last_suppressed_log.clear()
+        self.telemetry = SessionTelemetry()
         self.session_started_at = datetime.now()
         self.session_id = self.session_started_at.strftime("%Y%m%d_%H%M%S")
         self.evidence_dir = self._make_session_evidence_dir()
@@ -1698,9 +2013,7 @@ class PediatriaPopupDemo(QMainWindow):
                 sample_interval_frames=self.dataset_sample_interval_frames,
                 max_crops_per_track=self.dataset_max_crops_per_track,
             )
-        fps = capture.get(cv2.CAP_PROP_FPS) or 30.0
-        self.performance_profile = performance_profile_for_device(self.device, fps)
-        self.timer.start(max(1, int(1000 / float(self.performance_profile["display_fps"]))))
+        self.timer.start(max(1, int(1000 / float(self.performance_profile["display_fps"] or 12.0))))
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
         self.force_cpu_checkbox.setEnabled(False)
@@ -1772,6 +2085,7 @@ class PediatriaPopupDemo(QMainWindow):
     def _next_frame(self) -> None:
         if self.capture is None or self.service is None:
             return
+        loop_started = time.perf_counter()
         ok, frame = self.capture.read()
         if not ok or frame is None:
             if isinstance(self.current_source, str) and "://" not in self.current_source:
@@ -1791,11 +2105,15 @@ class PediatriaPopupDemo(QMainWindow):
             ):
                 self.device = "cpu"
                 self.device_reason = "gpu_indisponivel_fallback_cpu"
-                if self.service is not None:
-                    self.service.set_device("cpu")
                 fps = self.capture.get(cv2.CAP_PROP_FPS) if self.capture is not None else 30.0
                 self.performance_profile = performance_profile_for_device(self.device, fps or 30.0)
-                self.timer.start(max(1, int(1000 / float(self.performance_profile["display_fps"]))))
+                if self.service is not None:
+                    self.service.set_device(
+                        "cpu",
+                        detector_stride_frames=int(self.performance_profile["detector_stride_frames"] or 1),
+                        specialist_budget_per_frame=self.performance_profile["specialist_budget_per_frame"],
+                    )
+                self.timer.start(max(1, int(1000 / float(self.performance_profile["display_fps"] or 12.0))))
                 self.status.setText("GPU indisponivel. Reprocessando em CPU.")
                 try:
                     frame_result = self.service.process_frame(clean_frame, frame_id=self.frame_index)
@@ -1948,8 +2266,14 @@ class PediatriaPopupDemo(QMainWindow):
             if self._resolved_frames_by_camera[source_name] >= 45:
                 self.alert_latch.resolve_camera(source_name)
 
+        render_started = time.perf_counter()
         self.runner._annotate(frame, resolved, state.stable_state, self.frame_index)
         self.video.setPixmap(self._frame_to_pixmap(frame))
+        self.telemetry.render_frame_ms.add((time.perf_counter() - render_started) * 1000.0)
+
+        self.telemetry.process_frame_ms.add(frame_result.latency_ms)
+        self.telemetry.capture_loop_ms.add((time.perf_counter() - loop_started) * 1000.0)
+        self.telemetry.sample_resources()
 
 
 
@@ -2044,8 +2368,13 @@ class PediatriaPopupDemo(QMainWindow):
         candidates = [item for item in detections if role is None or item.role == role]
         return max(candidates, key=lambda item: item.confidence, default=None)
 
-    @staticmethod
-    def _write_image(path: Path, image: Any, errors: list[str], label: str) -> bool:
+    _DISK_USAGE_CATEGORY_BY_LABEL = {
+        "frame": "evidence_frames_bytes",
+        "annotated": "evidence_annotated_bytes",
+        "crop": "evidence_crops_bytes",
+    }
+
+    def _write_image(self, path: Path, image: Any, errors: list[str], label: str) -> bool:
         try:
             if image is None or not hasattr(image, "size") or image.size == 0:
                 errors.append(f"{label}:empty_image")
@@ -2057,6 +2386,9 @@ class PediatriaPopupDemo(QMainWindow):
             if not path.exists():
                 errors.append(f"{label}:missing_after_write")
                 return False
+            category = self._DISK_USAGE_CATEGORY_BY_LABEL.get(label)
+            if category is not None:
+                self.telemetry.disk_usage.record_file(category, path)
             return True
         except Exception as exc:
             errors.append(f"{label}:{type(exc).__name__}:{exc}")
@@ -2120,10 +2452,9 @@ class PediatriaPopupDemo(QMainWindow):
         )
         metadata["metadata_path"] = str(paths["metadata"])
         paths["metadata"].parent.mkdir(parents=True, exist_ok=True)
-        paths["metadata"].write_text(
-            json.dumps(metadata, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        metadata_text = json.dumps(metadata, indent=2, ensure_ascii=False)
+        paths["metadata"].write_text(metadata_text, encoding="utf-8")
+        self.telemetry.disk_usage.record_text("metadata_bytes", metadata_text)
         evidence_paths["metadata"] = str(paths["metadata"])
         return evidence_paths, errors
 
@@ -2154,18 +2485,21 @@ class PediatriaPopupDemo(QMainWindow):
             suppression_reason=suppression_reason,
         )
         self._record_event_summary(payload)
-        self.events_log_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.events_log_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        self._append_events_jsonl_line(payload)
 
     def _append_session_log(self, payload: dict[str, Any]) -> None:
         item = {
             "created_at": datetime.now().isoformat(timespec="milliseconds"),
             **payload,
         }
+        self._append_events_jsonl_line(item)
+
+    def _append_events_jsonl_line(self, payload: dict[str, Any]) -> None:
         self.events_log_path.parent.mkdir(parents=True, exist_ok=True)
+        line = json.dumps(payload, ensure_ascii=False) + "\n"
         with self.events_log_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(item, ensure_ascii=False) + "\n")
+            handle.write(line)
+        self.telemetry.disk_usage.record_text("events_jsonl_bytes", line)
 
     def _append_suppressed_alert_if_due(
         self,
@@ -2323,6 +2657,13 @@ class PediatriaPopupDemo(QMainWindow):
         best_detection = self._best_detection(detections)
         crop_detection = choose_event_crop_detection(child, detections, person_detections)
         status_final = self._event_status_final(state, detections, person_detections)
+        specialist_classification = None
+        detector_specialist_profile = None
+        crop_pipeline = getattr(self, "crop_pipeline", None)
+        if crop_pipeline is not None:
+            detector_specialist_profile = dict(crop_pipeline.last_frame_meta)
+            if crop_detection is not None:
+                specialist_classification = crop_pipeline.last_trace.get(crop_detection.track_id)
         try:
             force_cpu_checked = bool(
                 getattr(self, "force_cpu_checkbox", None)
@@ -2360,6 +2701,8 @@ class PediatriaPopupDemo(QMainWindow):
             "child_confidence": best_child.confidence if best_child is not None else None,
             "child_bbox_xyxy": list(best_child.bbox_xyxy) if best_child is not None else None,
             "crop_bbox_xyxy": list(crop_detection.bbox_xyxy) if crop_detection is not None else None,
+            "specialist_classification": specialist_classification,
+            "detector_specialist_profile": detector_specialist_profile,
             "selected_child": serialize_detection(child),
             "children": children,
             "detections": [serialize_detection(item) for item in detections],
@@ -2459,6 +2802,7 @@ class PediatriaPopupDemo(QMainWindow):
         self._write_session_summary_files(report["session_summary"])
 
     def _build_session_summary(self) -> dict[str, Any]:
+        crop_pipeline = getattr(self, "crop_pipeline", None)
         return {
             "session_id": self.session_id,
             "source": source_display_name(self.current_source or "pediatria_local"),
@@ -2481,14 +2825,22 @@ class PediatriaPopupDemo(QMainWindow):
                 if self.latencies
                 else None
             ),
+            "specialist_classification_stats": (
+                dict(crop_pipeline.stats) if crop_pipeline is not None else None
+            ),
+            "resources": self.telemetry.resources_snapshot(),
+            "performance": self.telemetry.performance_snapshot(
+                frames_processed=self.frame_index,
+                extra=crop_pipeline.timing_snapshot() if crop_pipeline is not None else None,
+            ),
+            "disk_usage": self.telemetry.disk_usage_snapshot(),
         }
 
     def _write_session_summary_files(self, summary: dict[str, Any]) -> None:
         self.evidence_dir.mkdir(parents=True, exist_ok=True)
-        (self.evidence_dir / "session_summary.json").write_text(
-            json.dumps(summary, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        summary_text = json.dumps(summary, indent=2, ensure_ascii=False)
+        (self.evidence_dir / "session_summary.json").write_text(summary_text, encoding="utf-8")
+        self.telemetry.disk_usage.record_text("session_summary_bytes", summary_text)
         csv_path = self.evidence_dir / "session_summary.csv"
         with csv_path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle)
@@ -2497,6 +2849,8 @@ class PediatriaPopupDemo(QMainWindow):
                 if isinstance(value, (dict, list)):
                     value = json.dumps(value, ensure_ascii=False)
                 writer.writerow([key, value])
+        self.telemetry.disk_usage.record_file("session_summary_bytes", csv_path)
+        self.telemetry.write_resource_samples(self.evidence_dir / "resource_samples.jsonl")
 
     def closeEvent(self, event: Any) -> None:
         self.stop_analysis()
