@@ -16,7 +16,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 import httpx
 
-from src.jutta_ped.painel import routes_auth, routes_cameras, routes_config, routes_usuarios
+from src.jutta_ped.painel import routes_auth, routes_cameras, routes_config, routes_monitor, routes_usuarios
 from src.jutta_ped.painel.config_service import ler_config
 from src.jutta_ped.painel.crypto import Cifra
 from src.jutta_ped.painel.db import Database
@@ -64,7 +64,6 @@ def _secao_em_construcao(caminho: str, titulo: str, chave: str, *, admin: bool =
         return render(request, "em_construcao.html", usuario, titulo=titulo, ativo=chave)
 
 
-_secao_em_construcao("/monitoramento", "Monitoramento", "monitoramento")
 _secao_em_construcao("/relatorio", "Relatório", "relatorio")
 _secao_em_construcao("/destinos", "Destinos", "destinos", admin=True)
 
@@ -170,5 +169,6 @@ def mount_panel(
     app.include_router(routes_usuarios.router)
     app.include_router(routes_cameras.router)
     app.include_router(routes_config.router)
+    app.include_router(routes_monitor.router)
     app.include_router(_placeholders)
     return database

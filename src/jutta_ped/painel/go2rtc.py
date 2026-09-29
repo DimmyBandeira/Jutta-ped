@@ -83,7 +83,10 @@ def render_streams_yaml(streams: dict[str, str]) -> str:
     return "\n".join(linhas) + "\n"
 
 
-def escrever_atomico(path: Path, conteudo: str) -> None:
+def escrever_atomico(path: Path, conteudo: str, *, tentativas: int = 5, espera: float = 0.1) -> None:
+    """Grava via arquivo temporario + rename. No Windows o destino pode ficar travado por
+    instantes (antivirus, sincronizador de nuvem, o proprio go2rtc lendo): tenta de novo e,
+    por ultimo, grava direto no destino."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(conteudo, encoding="utf-8")
@@ -91,7 +94,19 @@ def escrever_atomico(path: Path, conteudo: str) -> None:
         tmp.chmod(0o600)
     except OSError:
         pass
-    os.replace(tmp, path)
+    for tentativa in range(tentativas):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            time.sleep(espera * (tentativa + 1))
+    try:
+        path.write_text(conteudo, encoding="utf-8")
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
 
 
 class Go2rtcIndisponivel(Exception):
@@ -181,7 +196,10 @@ class Go2rtcSync:
                     camera.go2rtc_sync, camera.go2rtc_sync_erro = "erro", str(exc)[:200]
                     resumo.erro += 1
 
-            escrever_atomico(self._streams_yaml, render_streams_yaml({n: url for n, (_c, url) in desejados.items()}))
+            try:
+                escrever_atomico(self._streams_yaml, render_streams_yaml({n: url for n, (_c, url) in desejados.items()}))
+            except OSError as exc:  # o arquivo so serve ao proximo boot do go2rtc; a API a quente segue valendo
+                logger.warning("Nao consegui gravar %s (%s)", self._streams_yaml.name, type(exc).__name__)
 
             client = self._client_factory()
             try:

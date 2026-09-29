@@ -51,6 +51,16 @@
       "type": ["number", "null"],
       "description": "Idade do frame no momento da publicacao do overlay (captured_at -> agora), para o cliente avaliar qualidade/atraso temporal."
     },
+    "frame_w": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "description": "Largura em pixels do frame de origem (referencia das coordenadas de bbox_xyxy), para o cliente escalar o overlay sobre o video."
+    },
+    "frame_h": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "description": "Altura em pixels do frame de origem."
+    },
     "objects": {
       "type": "array",
       "description": "Um item por alvo detectado neste frame.",

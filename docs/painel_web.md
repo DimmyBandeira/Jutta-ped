@@ -134,8 +134,7 @@ worker (thread) ── popup_alert ──▶ EventBus.publish()
   recarregar/navegar (`popups_pendentes`) e após reconexão do SSE.
 - Evidências são servidas por `/painel/evidence/...`, resolvidas a partir do
   evento guardado — **nunca** por caminho vindo do cliente.
-- O overlay hoje não traz o tamanho do frame; será acrescentado `frame_w`/`frame_h`
-  ao overlay do runtime para o canvas escalar corretamente.
+- O overlay agora traz `frame_w`/`frame_h` (feito na fase 3) para o canvas escalar corretamente.
 
 Contexto de `partials/popup.html` (`ev`): `event_id`, `estado` (`CHILD_ALONE` |
 `CHILD_SEPARATED`), `camera_nome`, `quando_fmt`, `confianca` (0–1 ou `None`),
@@ -187,7 +186,7 @@ Todos compilam com Jinja2 (verificado). Variáveis globais em `base.html`:
 0. **Documento e fusão de templates** (esta etapa) — concluída.
 1. Banco, login, sessão/CSRF, papéis e CRUD de usuários — **concluída** (§13).
 2. CRUD de câmeras + `Go2rtcSync` + launcher do go2rtc (§11: partida assíncrona/escalonada e limite de câmeras com IA) — **concluída** (§14).
-3. Monitoramento: player go2rtc e overlay (polling) + toggle de IA por câmera.
+3. Monitoramento: player go2rtc e overlay (polling) + estado da IA por câmera — **concluída** (§15).
 4. `EventBus`, SSE, popups, ciência persistida.
 5. Relatório e dispatcher de destinos (GPS Indoor, WifiPTT, Webhook).
 6. Build Nuitka (incluir `web/templates` e `web/static`), limpeza de `web/_referencia/`.
@@ -293,3 +292,43 @@ Código novo em `src/jutta_ped/painel/`: `crypto`, `go2rtc`, `servicos`, `config
 exercitados contra um go2rtc simulado — validar assim que o executável estiver disponível.
 O go2rtc escuta só em `127.0.0.1`: para operadores em outras máquinas o vídeo deve passar
 por um proxy autenticado do próprio painel (fase 3), em vez de expor a API do go2rtc.
+
+## 15. Fase 3 — o que existe
+
+Código: `src/jutta_ped/painel/routes_monitor.py`, `web/static/js/live.js`, templates
+`monitoramento.html`, `partials/{camera_card,ia_estado}.html`; testes em
+`tests/test_painel_monitoramento.py` (helpers compartilhados em `tests/painel_helpers.py`).
+
+- **Monitoramento** (`/painel/monitoramento`, qualquer usuário logado): grade com um card
+  por câmera. Player = iframe do `stream.html` do go2rtc (`src=cam_<id>` ou o stream de
+  teste). O player só é oferecido quando o stream está `ok` no go2rtc. Botões Play/Pause por
+  câmera e "Tocar todas"/"Pausar todas".
+- **Host do player:** se `go2rtc_public_url` está em loopback (padrão) mas o operador abriu o
+  painel por outro host, o painel troca o host pelo do navegador (mantém porta e esquema).
+- **Overlay:** `GET /painel/cameras/{id}/overlay` devolve o último overlay da IA (contrato
+  `plugin/schemas/overlay.schema.json`, agora com `frame_w`/`frame_h`). `live.js` consulta a
+  cada 300 ms só as câmeras em Play, mapeia as coordenadas para a área real do vídeo
+  (letterbox) e descarta overlay com mais de 2 s.
+- **Estado da IA por card** (`/painel/cameras/{id}/ia-estado`, atualizado a cada 3 s):
+  Analisando, Criança acompanhada/desacompanhada, Incerto, Iniciando, Aguardando stream,
+  Erro (com o motivo no tooltip), Limite atingido, IA desligada.
+- **SSE** (`/painel/stream`): já conecta e mantém a conexão com heartbeat; os popups saem
+  por ele na fase 4. `run_pediatria_service_api.py` usa `timeout_graceful_shutdown=5`
+  para o serviço encerrar mesmo com o painel aberto.
+- **Correção encontrada na validação real:** a escrita de `streams.yaml` falhava no
+  Windows/OneDrive (`Acesso negado` no rename). Agora tenta de novo, cai para gravação direta
+  e, se ainda assim falhar, apenas registra aviso — a API a quente continua valendo.
+
+**Validado contra o go2rtc real (1.9.14) e os modelos reais:** `PUT/DELETE /api/streams`
+funcionam como implementado (o go2rtc persiste no próprio YAML e o `DELETE` reverte); uma
+câmera apontando para um vídeo de demo foi cadastrada pelo painel, a IA subiu sozinha lendo
+o restream `rtsp://127.0.0.1:8554/cam_N`, o estado alternou entre Analisando / Criança
+acompanhada / desacompanhada / Incerto e o overlay chegou com `960x720` e várias caixas por
+frame. Uma câmera com IP inalcançável falhou com backoff sem afetar a outra. Ao remover as
+câmeras, os streams `cam_*` sumiram do go2rtc e o YAML do gateway ficou idêntico ao original.
+
+**Ainda não validado:** a renderização no navegador (iframe do player e desenho do canvas);
+só o lado servidor e os contratos foram exercitados. **Segurança:** a API do go2rtc
+(`:1984`) devolve as URLs com senha para qualquer cliente que a alcance — restringir por
+firewall/bind ao `127.0.0.1` em produção; um proxy autenticado do painel segue como opção
+futura.

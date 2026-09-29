@@ -23,56 +23,8 @@ from src.jutta_ped.painel.go2rtc import (
 from src.jutta_ped.painel.models import Camera, Fabricante, Papel, StreamTipo, Usuario
 from src.jutta_ped.painel.panel import mount_panel
 from src.jutta_ped.painel.security import hash_senha
+from painel_helpers import FakeGerente, FakeGo2rtc, SENHA_ADMIN, _dados_intelbras, _hx, _login, _token
 
-SENHA_ADMIN = "senha-admin-123"
-
-
-class FakeGo2rtc:
-    """Servidor go2rtc falso (so /api/streams) plugado via httpx.MockTransport."""
-
-    def __init__(self) -> None:
-        self.streams: dict[str, str] = {}
-        self.online = True
-        self.chamadas: list[tuple[str, str]] = []
-
-    def __call__(self, request: httpx.Request) -> httpx.Response:
-        if not self.online:
-            raise httpx.ConnectError("recusado", request=request)
-        if request.url.path != "/api/streams":
-            return httpx.Response(404)
-        q = request.url.params
-        self.chamadas.append((request.method, q.get("name") or q.get("src") or ""))
-        if request.method == "GET":
-            return httpx.Response(200, json={n: {"producers": [{"url": "***"}]} for n in self.streams})
-        if request.method == "PUT":
-            self.streams[q["name"]] = q["src"]
-            return httpx.Response(200)
-        if request.method == "DELETE":
-            self.streams.pop(q["src"], None)
-            return httpx.Response(200)
-        return httpx.Response(405)
-
-
-class FakeGerente:
-    def __init__(self) -> None:
-        self.ativas: dict[str, SimpleNamespace] = {}
-        self.falhar = False
-
-    def enable_camera(self, config):
-        if self.falhar:
-            raise RuntimeError("modelo indisponivel")
-        self.ativas[config.camera_id] = config
-        return {}
-
-    def disable_camera(self, camera_id):
-        self.ativas.pop(camera_id, None)
-        return {}
-
-    def camera_status(self, camera_id):
-        return {"camera_id": camera_id, "active": camera_id in self.ativas}
-
-    def cameras(self):
-        return [{"camera_id": c, "active": True} for c in self.ativas]
 
 
 @pytest.fixture()
@@ -94,29 +46,6 @@ def ambiente(tmp_path: Path, monkeypatch):
     with TestClient(app, follow_redirects=False) as client:
         yield SimpleNamespace(client=client, database=database, go2rtc=go2rtc, gerente=gerente, app=app, runtime=tmp_path, servicos=app.state.painel)
     database.dispose()
-
-
-def _token(client, path="/login") -> str:
-    html = client.get(path).text
-    m = re.search(r'name="csrf_token" value="([^"]+)"', html) or re.search(r'"X-CSRF-Token": "([^"]+)"', html)
-    assert m, html[:300]
-    return m.group(1)
-
-
-def _login(client, login="admin", senha=SENHA_ADMIN):
-    assert client.post("/login", data={"login": login, "senha": senha, "csrf_token": _token(client)}).status_code == 303
-
-
-def _hx(client, metodo, url, **kw):
-    token = _token(client, "/painel/cameras")
-    return client.request(metodo, url, headers={"X-CSRF-Token": token, "HX-Request": "true"}, **kw)
-
-
-def _dados_intelbras(**extra):
-    base = {"nome": "Recepção", "fabricante": "intelbras", "ip": "10.0.0.5", "porta": "554", "canal": "1",
-            "stream_tipo": "principal", "usuario": "admin", "senha": "p@ss#1", "ia_pediatria": "on"}
-    base.update(extra)
-    return base
 
 
 def _camera(ambiente, nome="Recepção") -> Camera:
@@ -512,3 +441,58 @@ def test_processo_reinicia_se_morrer_respeitando_intervalo(tmp_path):
     assert len(lancados) == 1
     agora[0] += 11
     assert p.garantir() == "rodando" and len(lancados) == 2
+
+
+# ------------------------------------------------------------ escrita do streams.yaml (Windows/OneDrive)
+
+
+def test_escrita_atomica_tenta_de_novo_quando_destino_esta_travado(tmp_path, monkeypatch):
+    import os
+
+    from src.jutta_ped.painel import go2rtc as modulo
+
+    real, falhas = os.replace, {"n": 0}
+
+    def replace_travado(origem, destino):
+        if falhas["n"] < 2:
+            falhas["n"] += 1
+            raise PermissionError(5, "Acesso negado")
+        return real(origem, destino)
+
+    monkeypatch.setattr(modulo.os, "replace", replace_travado)
+    monkeypatch.setattr(modulo.time, "sleep", lambda _s: None)
+    alvo = tmp_path / "streams.yaml"
+    modulo.escrever_atomico(alvo, "streams: {}\n")
+    assert alvo.read_text(encoding="utf-8") == "streams: {}\n" and falhas["n"] == 2
+    assert not (tmp_path / "streams.yaml.tmp").exists()
+
+
+def test_destino_sempre_travado_cai_para_gravacao_direta_sem_deixar_lixo(tmp_path, monkeypatch):
+    from src.jutta_ped.painel import go2rtc as modulo
+
+    def sempre_negado(origem, destino):
+        raise PermissionError(5, "Acesso negado")
+
+    monkeypatch.setattr(modulo.os, "replace", sempre_negado)
+    monkeypatch.setattr(modulo.time, "sleep", lambda _s: None)
+    alvo = tmp_path / "streams.yaml"
+    modulo.escrever_atomico(alvo, "streams: {}\n")
+    assert alvo.read_text(encoding="utf-8") == "streams: {}\n"
+    assert not (tmp_path / "streams.yaml.tmp").exists()
+
+
+def test_falha_ao_gravar_yaml_nao_impede_sincronizar_pela_api(ambiente, monkeypatch):
+    from src.jutta_ped.painel import go2rtc as modulo
+
+    a = ambiente
+    _login(a.client)
+
+    def quebrado(*_a, **_k):
+        raise PermissionError(5, "Acesso negado")
+
+    monkeypatch.setattr(modulo, "escrever_atomico", quebrado)
+    r = _hx(a.client, "POST", "/painel/cameras", data=_dados_intelbras())
+    assert r.status_code == 200
+    assert "cam_1" in a.go2rtc.streams                 # a API a quente funcionou
+    assert _hx(a.client, "DELETE", "/painel/cameras/1").status_code == 200
+    assert a.go2rtc.streams == {}

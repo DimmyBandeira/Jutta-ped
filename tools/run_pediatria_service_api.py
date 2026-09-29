@@ -26,6 +26,7 @@ def main() -> None:
         host=args.host,
         port=args.port,
         reload=args.reload,
+        timeout_graceful_shutdown=5,  # SSE do painel mantem conexoes abertas
     )
 
 

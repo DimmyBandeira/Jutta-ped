@@ -2,6 +2,15 @@
 {% block title %}Monitoramento — Jutta Ped{% endblock %}
 {% block main_class %}larga{% endblock %}
 {% block content %}
+{% if cameras %}
+<div class="barra-acoes" style="justify-content:space-between; align-items:center">
+  <span class="aviso" style="margin:0">{{ cameras|length }} câmera(s)</span>
+  <div style="display:flex; gap:.5rem">
+    <button class="btn" type="button" onclick="liveTodas(true)">Tocar todas</button>
+    <button class="btn" type="button" onclick="liveTodas(false)">Pausar todas</button>
+  </div>
+</div>
+{% endif %}
 <div class="grade-cameras" id="grade-cameras">
   {% for c in cameras %}{% include "partials/camera_card.html" %}
   {% else %}<div class="vazio">Nenhuma câmera cadastrada. Cadastre em "Câmeras".</div>{% endfor %}

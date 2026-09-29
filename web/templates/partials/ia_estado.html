@@ -1,7 +1,12 @@
-{# Badge do estado operacional da IA. Contexto: c.ia_estado, c.ia_ativa. #}
+{# Badge do estado da IA. Contexto: c.ia_ativa, c.ia_estado (status operacional ou
+   iniciando/aguardando_stream/erro/limite), c.ia_erro. #}
 {% if not c.ia_ativa %}<span class="badge neutro">IA desligada</span>
-{% elif c.ia_estado in ('CRIANCA_DESACOMPANHADA',) %}<span class="badge alerta">Criança desacompanhada</span>
+{% elif c.ia_estado == 'CRIANCA_DESACOMPANHADA' %}<span class="badge alerta">Criança desacompanhada</span>
 {% elif c.ia_estado == 'CRIANCA_ACOMPANHADA' %}<span class="badge online">Criança acompanhada</span>
-{% elif c.ia_estado == 'ERROR' %}<span class="badge offline">Erro na IA</span>
-{% elif c.ia_estado in ('UNCERTAIN',) %}<span class="badge aviso-amarelo">Incerto</span>
-{% else %}<span class="badge online">{{ 'Analisando' if c.ia_estado == 'ANALISANDO' else (c.ia_estado or 'Analisando')|title }}</span>{% endif %}
+{% elif c.ia_estado == 'UNCERTAIN' %}<span class="badge aviso-amarelo">Incerto</span>
+{% elif c.ia_estado == 'iniciando' %}<span class="badge aviso-amarelo">Iniciando IA…</span>
+{% elif c.ia_estado == 'aguardando_stream' %}<span class="badge aviso-amarelo">Aguardando stream</span>
+{% elif c.ia_estado == 'limite' %}<span class="badge neutro" title="{{ c.ia_erro or '' }}">Limite de IA atingido</span>
+{% elif c.ia_estado in ('erro', 'ERROR') %}<span class="badge offline" title="{{ c.ia_erro or '' }}">Erro na IA</span>
+{% elif c.ia_estado == 'STOPPED' %}<span class="badge neutro">IA parada</span>
+{% else %}<span class="badge online">Analisando</span>{% endif %}

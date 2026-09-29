@@ -514,9 +514,12 @@ class PediatriaHeadlessSession:
         with self.lock:
             self.state.status_final = status_final
             self.state.last_frame_at = captured_at
+            frame_shape = getattr(clean_frame, "shape", None)
             self.last_overlay_frame = {
                 "frame_seq": frame_id,
                 "captured_at": captured_at,
+                "frame_w": int(frame_shape[1]) if frame_shape is not None and len(frame_shape) >= 2 else None,
+                "frame_h": int(frame_shape[0]) if frame_shape is not None and len(frame_shape) >= 2 else None,
                 "objects": overlay_objects,
             }
         if frame_id % max(1, self.config.diagnostic_log_interval_frames) == 0:
@@ -1029,6 +1032,8 @@ class PediatriaSessionManager:
                 "frame_seq": 0,
                 "captured_at": now.isoformat(timespec="milliseconds"),
                 "frame_age_ms": None,
+                "frame_w": None,
+                "frame_h": None,
                 "objects": [],
             }
         frame_age_ms: float | None
@@ -1045,6 +1050,8 @@ class PediatriaSessionManager:
             "frame_seq": frame["frame_seq"],
             "captured_at": frame["captured_at"],
             "frame_age_ms": frame_age_ms,
+            "frame_w": frame.get("frame_w"),
+            "frame_h": frame.get("frame_h"),
             "objects": frame["objects"],
         }
 
