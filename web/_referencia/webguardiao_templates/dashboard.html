@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Live View · {{ app_name }}{% endblock %}
+{% block heading %}Live View{% endblock %}
+{% block header_right %}
+  <button hx-get="/partials/camera-grid" hx-target="#camera-grid" hx-swap="innerHTML"
+          class="px-3 py-1.5 rounded-lg bg-ink-700 hover:bg-ink-600 transition">
+    Atualizar grid
+  </button>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-5">
+  <!-- Grid de câmeras — largura total do conteúdo -->
+  <div id="camera-grid">
+    {% include "partials/camera_grid.html" %}
+  </div>
+
+  <!-- Painel de eventos (placeholder para fase de IA) -->
+  <section class="bg-ink-800 border border-ink-600 rounded-2xl p-4">
+    <h2 class="text-sm font-semibold mb-3 text-slate-300">Eventos</h2>
+    <div class="text-xs text-slate-500 border border-dashed border-ink-600 rounded-xl p-4 text-center">
+      Área reservada para alertas e detecções de IA (próxima fase).
+    </div>
+  </section>
+</div>
+{% endblock %}

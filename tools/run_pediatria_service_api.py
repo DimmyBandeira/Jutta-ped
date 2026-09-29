@@ -22,7 +22,7 @@ def main() -> None:
             "uvicorn/FastAPI nao instalados. Rode: pip install -r requirements-mvp.txt"
         ) from exc
     uvicorn.run(
-        "src.jutta_ped.api.app:app",
+        "src.jutta_ped.api.server:app",
         host=args.host,
         port=args.port,
         reload=args.reload,

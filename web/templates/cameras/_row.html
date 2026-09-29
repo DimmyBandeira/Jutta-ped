@@ -1,0 +1,16 @@
+<tr id="camera-{{ c.id }}">
+  <td>{{ c.nome }}</td>
+  <td>{% if c.fabricante.value == 'go2rtc_teste' %}<span class="aviso">stream: {{ c.go2rtc_stream_name }}</span>{% elif c.fabricante.value == 'rtsp_generico' %}<span class="aviso">URL RTSP</span>{% else %}{{ c.ip }}:{{ c.porta }} ch{{ c.canal }} {{ 'principal' if c.stream_tipo.value == 'principal' else 'extra' }}{% endif %}</td>
+  <td>{{ {'go2rtc_teste':'go2rtc (teste)','rtsp_generico':'RTSP genérico'}.get(c.fabricante.value, c.fabricante.value|title) }}</td>
+  <td>{{ 'ligada' if c.ia_pediatria else '—' }}</td>
+  <td>{% if c.go2rtc_sync == 'ok' %}<span class="badge online">sincronizado</span>{% elif c.go2rtc_sync == 'erro' %}<span class="badge offline" title="{{ c.go2rtc_sync_erro }}">erro</span>{% else %}<span class="badge neutro">pendente</span>{% endif %}</td>
+  <td>{% for cd in c.destinos %}{{ cd.destino.nome }}{% if not loop.last %}, {% endif %}{% else %}<span class="aviso">nenhum</span>{% endfor %}</td>
+  <td>
+    {% if c.status and c.status.online %}<span class="badge online">online</span>
+    {% else %}<span class="badge offline">sem sinal</span>{% endif %}
+  </td>
+  <td style="white-space:nowrap">
+    <button class="btn" hx-get="/painel/cameras/{{ c.id }}/editar" hx-target="#form-area" hx-swap="innerHTML">Editar</button>
+    <button class="btn perigo" hx-delete="/painel/cameras/{{ c.id }}" hx-target="#camera-{{ c.id }}" hx-swap="outerHTML" hx-confirm="Remover a câmera {{ c.nome }}?">Remover</button>
+  </td>
+</tr>

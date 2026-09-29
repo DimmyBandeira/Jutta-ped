@@ -1,0 +1,9 @@
+{% if status.ok %}
+<span class="text-xs px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 whitespace-nowrap">
+  ✓ {{ status.msg }}
+</span>
+{% else %}
+<span class="text-xs px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 whitespace-nowrap">
+  ✗ {{ status.msg }}
+</span>
+{% endif %}

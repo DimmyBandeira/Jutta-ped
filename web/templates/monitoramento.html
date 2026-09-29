@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Monitoramento — Jutta Ped{% endblock %}
+{% block main_class %}larga{% endblock %}
+{% block content %}
+<div class="grade-cameras" id="grade-cameras">
+  {% for c in cameras %}{% include "partials/camera_card.html" %}
+  {% else %}<div class="vazio">Nenhuma câmera cadastrada. Cadastre em "Câmeras".</div>{% endfor %}
+</div>
+
+<section class="painel-eventos">
+  <h3>Alertas recentes</h3>
+  <div id="lista-eventos-recentes" hx-get="/painel/eventos/recentes" hx-trigger="load, every 10s" hx-swap="innerHTML"></div>
+</section>
+
+{% endblock %}
+{% block scripts %}<script src="/static/js/live.js"></script>{% endblock %}

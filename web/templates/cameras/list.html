@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Câmeras — Jutta Ped{% endblock %}
+{% block content %}
+<div class="barra-acoes">
+  <button class="btn primary" hx-get="/painel/cameras/novo" hx-target="#form-area" hx-swap="innerHTML">+ Nova câmera</button>
+</div>
+<div id="form-area"></div>
+{% include "cameras/_lista.html" %}
+{% endblock %}

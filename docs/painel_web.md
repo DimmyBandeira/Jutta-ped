@@ -1,0 +1,255 @@
+# Painel Web Jutta Ped
+
+Painel de monitoramento (FastAPI + Jinja2 + HTMX) acoplado ao serviço local de
+pediatria. Este documento é o contrato de implementação: os templates em
+`web/templates/` já seguem os contextos descritos aqui; o backend será escrito
+para satisfazê-los.
+
+## 1. Decisões
+
+| Tema | Decisão |
+|---|---|
+| Acesso | Login com sessão. Papéis `admin` e `comum`. |
+| Banco | SQLite + SQLAlchemy 2.x (arquivo em `runtime/painel.db`). Troca para Postgres possível depois sem mudar as regras. |
+| Vídeo ao vivo | go2rtc (player em iframe; WebRTC/MSE). Roda em Windows agora e em VM Linux depois. |
+| Câmeras | O **banco é a fonte da verdade**; o go2rtc é reconciliado a partir dele (§5). O operador só cadastra a câmera. |
+| Alertas | Popups por SSE + HTMX, com ciência (ack) persistida. |
+| Integrações | Destinos (GPS Indoor, WifiPTT, Webhook) despachados por um *dispatcher* que o admin **habilita à mão** na UI (§7). |
+| Offline | Sem CDN. HTMX e a extensão SSE são servidos de `web/static/vendor/`. |
+| Layout | Código Python em `src/jutta_ped/`; templates e estáticos em `web/`. Rotas do painel sob `/painel/*`, sem colidir com a API JSON existente (`/cameras`, `/sessions`, `/instances`). |
+
+## 2. Origem dos templates e como foram mesclados
+
+Duas fontes foram unificadas em `web/templates/` + `web/static/`:
+
+- **`templates/` (base adotada)**: veio do projeto "Conector GPS Indoor". Trouxe
+  CSS próprio sem CDN, HTMX local, CRUD de câmeras/destinos/usuários com
+  formulários HTMX, papéis admin/comum e a tela de configuração do go2rtc.
+- **`web/` original (Tailwind/WebGuardião Core)**: só as ideias que faltavam foram
+  aproveitadas: card de câmera com iframe go2rtc + canvas de overlay, desenho de
+  bounding boxes e painel de eventos. O Tailwind por CDN foi descartado.
+
+O material antigo foi arquivado, sem alteração, em `web/_referencia/` (pode ser
+apagado quando o painel estiver completo).
+
+Adaptações feitas sobre a base:
+
+| Base | Mudança |
+|---|---|
+| Prefixo `/admin/*` | Trocado por `/painel/*` (evita colisão com a API). |
+| `auditoria.html` | Virou `relatorio.html` (câmeras, destinos e alertas pediátricos). |
+| Câmera | Removidos "térmica" e "duração do clipe" (não se aplicam); adicionados `ia_pediatria` e o fabricante `rtsp_generico`. |
+| Destinos | Adicionado tipo `webhook` e o estado habilitado/desabilitado + "Enviar teste". |
+| Configurações | Trocado o TTL de link de vídeo por: go2rtc (API, player público, RTSP), cooldown, retenção de evidências. |
+| CSS | Extraído de `<style>` para `static/css/app.css` e ampliado (grade de câmeras, popups). |
+| Novos | `login.html`, `monitoramento.html`, `partials/{camera_card,ia_estado,popup,alertas_tabela,eventos_recentes}.html`, `static/js/{live,popup}.js`. |
+
+## 3. Mapa de rotas
+
+Autenticação/CSRF: toda rota exige sessão, exceto `/login`. Requisições que
+alteram estado exigem o token CSRF (`X-CSRF-Token` via `hx-headers` no `<body>`,
+ou o campo `csrf_token` em formulários comuns).
+
+| Rota | Papel | Descrição |
+|---|---|---|
+| `GET/POST /login`, `POST /logout` | público / logado | Sessão. |
+| `GET /` | logado | Redireciona para `/painel/monitoramento`. |
+| `GET /painel/monitoramento` | comum+ | Grade de câmeras + alertas recentes. |
+| `GET /painel/stream` | comum+ | SSE: `event: popup` com o HTML de `partials/popup.html`. |
+| `POST /painel/popups/{event_id}/ack` | comum+ | Dá ciência; devolve corpo vazio (remove o popup). |
+| `GET /painel/cameras/{id}/overlay` | comum+ | Overlay da câmera (JSON do contrato de overlay + `frame_w`/`frame_h`). |
+| `GET /painel/cameras/{id}/ia-estado` | comum+ | Fragmento `partials/ia_estado.html`. |
+| `GET /painel/evidence/{event_id}/{kind}` | comum+ | Imagem de evidência (`crop`, `annotated`, `frame`). |
+| `GET /painel/eventos/recentes` | comum+ | Fragmento `partials/eventos_recentes.html`. |
+| `GET /painel/relatorio`, `GET /painel/relatorio/alertas` | comum+ | Relatório e tabela filtrável de alertas. |
+| `/painel/cameras[...]` (listar, novo, editar, salvar, remover, campos-fonte, streams-do-yaml) | comum+ | CRUD de câmeras. |
+| `/painel/destinos[...]` (CRUD, `POST .../{id}/teste`) | admin | Destinos e dispatcher. |
+| `/painel/configuracoes` | admin | Configurações do sistema. |
+| `/painel/usuarios[...]` | admin | CRUD de usuários. |
+
+## 4. Papéis
+
+| Recurso | comum | admin |
+|---|---|---|
+| Monitoramento, popups (ciência), relatório de alertas | ✔ | ✔ |
+| Câmeras: listar, cadastrar, editar, remover, ligar/desligar IA | ✔ | ✔ |
+| Status dos destinos no relatório | — | ✔ |
+| Destinos (dispatcher) | — | ✔ |
+| Configurações | — | ✔ |
+| Usuários | — | ✔ |
+
+Regras: senha com hash `scrypt` (stdlib); cookie de sessão assinado, `HttpOnly`,
+`SameSite=Lax`; o último admin ativo não pode ser removido nem desativado;
+login/logout, CRUD e ciência de alertas vão para a tabela de auditoria.
+
+A API JSON existente (`/instances`, `/cameras/enable`…) é para máquina e hoje não
+tem autenticação: deve ficar em `127.0.0.1` (ou protegida por token) — o painel
+usa sessão e fala com o runtime em processo.
+
+## 5. Câmeras e go2rtc
+
+```
+Operador salva câmera ─▶ banco (câmera + senha cifrada)
+                              │
+                        Go2rtcSync.reconcile()
+                              ├─ gera runtime/go2rtc/streams.yaml (atômico)
+                              └─ aplica a quente: PUT /api/streams (go2rtc)
+```
+
+- `go2rtc.yaml` estático (portas, API em localhost, WebRTC) fica separado do
+  `streams.yaml` **gerado**; o go2rtc é iniciado com os dois (a suportar mais de
+  um `-config` deve ser confirmado na versão adotada; alternativa: gerar o
+  arquivo único).
+- `reconcile()` é idempotente e roda a cada CRUD, no boot do painel e num retry
+  periódico. O estado fica em `camera.go2rtc_sync` (`ok` / `pendente` / `erro`) e
+  aparece na UI ("sincronizando go2rtc…"). Se o go2rtc estiver fora, salvar a
+  câmera **não falha**.
+- Nome do stream no go2rtc: `cam_<id>` (estável; independe do nome exibido).
+- Senhas cifradas no banco (chave em `runtime/segredo.key`, permissão restrita);
+  só o `streams.yaml` gerado contém a URL completa.
+- **A IA lê o restream do go2rtc** (`rtsp://127.0.0.1:8554/cam_<id>`), sem abrir
+  segunda conexão na câmera. Esse valor é o `stream_ref` de `POST /instances`.
+  Ligar/desligar `ia_pediatria` chama `POST /instances` / `POST /instances/{id}/stop`.
+- Player no navegador: `{go2rtc_public_url}/stream.html?src=cam_<id>`. O endereço
+  público não pode ser `127.0.0.1` quando o painel é acessado de outra máquina.
+- Windows agora / Linux depois: caminhos via `pathlib`, sem shell; o launcher
+  inicia o go2rtc como subprocesso (Windows) ou o systemd o mantém (Linux). A
+  reconciliação não depende de quem sobe o processo.
+
+## 6. Fluxo de alertas (popup)
+
+```
+worker (thread) ── popup_alert ──▶ EventBus.publish()
+                                       ├─ grava em eventos_pediatria (banco)
+                                       ├─ ring buffer p/ replay (Last-Event-ID)
+                                       ├─ SSE /painel/stream ─▶ HTML do popup ─▶ HTMX (beforeend)
+                                       └─ Dispatcher (§7)
+```
+
+- O worker chama o barramento por um callback opcional da sessão
+  (`_append_event`), sem reler o `events.jsonl`. Só `popup_alert` gera popup;
+  `popup_suppressed` vai para o relatório como "suprimido".
+- `event_id = "<session_id>_<frame_id>"` (estável, seguro em URL).
+- Ciência (`ack`) grava usuário e hora; popups sem ciência reaparecem ao
+  recarregar/navegar (`popups_pendentes`) e após reconexão do SSE.
+- Evidências são servidas por `/painel/evidence/...`, resolvidas a partir do
+  evento guardado — **nunca** por caminho vindo do cliente.
+- O overlay hoje não traz o tamanho do frame; será acrescentado `frame_w`/`frame_h`
+  ao overlay do runtime para o canvas escalar corretamente.
+
+Contexto de `partials/popup.html` (`ev`): `event_id`, `estado` (`CHILD_ALONE` |
+`CHILD_SEPARATED`), `camera_nome`, `quando_fmt`, `confianca` (0–1 ou `None`),
+`motivo`, `crop_url`, `annotated_url`.
+
+## 7. Dispatcher de destinos
+
+- Interface única `Destino.enviar(risk_event) -> Resultado`, uma implementação por
+  tipo (`gpsindoor`, `wifiptt`, `webhook`). O evento enviado segue
+  `plugin/schemas/event.schema.json`.
+- Só destinos **habilitados** (`ativo=true`) recebem alertas. Novos destinos
+  nascem desabilitados; o admin usa "Enviar teste" e depois habilita.
+- Uma câmera escolhe quais destinos a recebem (vínculo N:N).
+- Envio fora da thread de inferência e do SSE: fila com worker próprio e retry
+  limitado; cada tentativa vira uma linha em `entregas` (sucesso, detalhe) e
+  aparece no relatório.
+- Credenciais dos destinos (senhas, tokens) cifradas como as das câmeras.
+
+## 8. Modelo de dados (resumo)
+
+`usuarios(id, login, senha_hash, papel, ativo)` ·
+`cameras(id, nome, fabricante, ip, porta, canal, stream_tipo, usuario, senha_enc, rtsp_url_enc, go2rtc_stream_name, identificador_externo, ia_pediatria, go2rtc_sync, go2rtc_sync_erro)` ·
+`destinos(id, nome, tipo, ativo, config_json_enc)` ·
+`camera_destinos(camera_id, destino_id)` ·
+`eventos_pediatria(id, event_id, camera_id, session_id, estado, confianca, suprimido, evidencias_json, criado_em, reconhecido_em, reconhecido_por)` ·
+`entregas(id, evento_id, destino_id, destino_nome, sucesso, detalhe, criado_em)` ·
+`configuracoes(chave, valor)` ·
+`auditoria(id, usuario_id, acao, alvo, criado_em)`.
+
+## 9. Templates: mapa e contexto
+
+Todos compilam com Jinja2 (verificado). Variáveis globais em `base.html`:
+`usuario_logado`, `eh_admin_logado`, `csrf_token`, `popups_pendentes`, `ativo`.
+
+| Template | Contexto além dos globais |
+|---|---|
+| `monitoramento.html` | `cameras` (cada uma com `player_url`, `ia_ativa`, `ia_estado`, `go2rtc_sync`) |
+| `partials/camera_card.html` | `c` |
+| `partials/ia_estado.html` | `c.ia_ativa`, `c.ia_estado` |
+| `relatorio.html` | `cameras` (+ `stream_online`, `ultimo_frame_em`, `ultimo_alerta_em`), `destinos_status` (só admin) |
+| `partials/alertas_tabela.html` | `alertas` (com `camera_nome`, `estado`, `confianca`, `suprimido`, `reconhecido_*`, `entregas`, `crop_url`, `annotated_url`) |
+| `cameras/*` | `cameras`, `camera`, `fabricante`, `destinos`, `destinos_vinculados_ids`, `streams_disponiveis` |
+| `destinos/*` | `destinos`, `destino`, `tipo` |
+| `usuarios/*` | `usuarios`, `usuario` |
+| `configuracoes.html` | `config`, `salvo`, `sync_status` |
+
+## 10. Fases de implementação
+
+0. **Documento e fusão de templates** (esta etapa) — concluída.
+1. Banco, login, sessão/CSRF, papéis e CRUD de usuários — **concluída** (§13).
+2. CRUD de câmeras + `Go2rtcSync` + launcher do go2rtc (§11: partida assíncrona/escalonada e limite de câmeras com IA).
+3. Monitoramento: player go2rtc e overlay (polling) + toggle de IA por câmera.
+4. `EventBus`, SSE, popups, ciência persistida.
+5. Relatório e dispatcher de destinos (GPS Indoor, WifiPTT, Webhook).
+6. Build Nuitka (incluir `web/templates` e `web/static`), limpeza de `web/_referencia/`.
+
+## 11. Várias câmeras, threads separadas
+
+Requisito: o painel opera **várias câmeras em paralelo**, cada uma isolada.
+
+Estado atual do runtime (`PediatriaSessionManager`): uma thread por câmera, com
+`PediatriaService` (e portanto modelos) próprio; uma falha numa câmera não derruba
+as outras. Consequências e regras adotadas:
+
+- **Isolamento de falhas:** cada câmera tem thread, reconexão e estado próprios.
+  O painel nunca executa inferência nem I/O de câmera na thread da requisição.
+- **Partida assíncrona:** hoje `start_session` carrega modelo e abre a fonte
+  dentro da requisição HTTP. O painel passa a iniciar a IA em segundo plano
+  (estado `starting` visível no card) e **escalonado**, para não travar a UI nem
+  saturar CPU/GPU quando várias câmeras sobem juntas (boot do serviço).
+- **Custo por câmera:** N câmeras = N cópias de modelo em memória. Medir RAM/VRAM
+  por instância e definir um **limite configurável de câmeras com IA ativa**
+  (recusa clara na UI ao exceder). Compartilhar um pool de inferência entre
+  câmeras é uma otimização posterior, só se a medição justificar.
+- **Barramento e dispatcher:** `EventBus` é thread-safe (chamado por N threads de
+  worker). Os envios aos destinos rodam em fila/worker próprios, nunca na thread
+  de inferência nem no loop do SSE.
+- **Banco:** uma sessão SQLAlchemy por unidade de trabalho (nunca compartilhada
+  entre threads); SQLite em modo WAL.
+- **go2rtc:** `Go2rtcSync` tem um único escritor (lock) — CRUD simultâneo de várias
+  câmeras não corrompe o `streams.yaml`.
+- **Observabilidade:** a tela de Monitoramento/Relatório mostra por câmera o
+  estado da thread (`starting`/`running`/`reconnecting`/`error`) e a latência.
+
+## 12. Riscos e pontos em aberto
+
+- Formato exato de chamada dos destinos GPS Indoor e WifiPTT: os templates só têm
+  os campos de configuração; a lógica de envio virá do projeto de origem e deve
+  ser trazida na fase 5.
+- Confirmar na versão do go2rtc: múltiplos `-config` e `PUT /api/streams`.
+- WebRTC exige UDP acessível ao navegador; se houver NAT/firewall, o fallback é MSE
+  por TCP (configurar no `stream.html?mode=`).
+- Overlay por polling (500 ms) pode ficar defasado do vídeo; aceitável na v1,
+  com descarte de overlay velho (`frame_age_ms`).
+
+## 13. Fase 1 — o que existe
+
+Código em `src/jutta_ped/painel/` (`db`, `models`, `security`, `deps`, `routes_auth`,
+`routes_usuarios`, `panel`); testes em `tests/test_painel_auth_usuarios.py`.
+
+- **Entrypoint:** `src/jutta_ped/api/server.py` = API JSON existente + `mount_panel(app)`.
+  `tools/run_pediatria_service_api.py` sobe esse app. `api/app.py` continua sem
+  efeitos colaterais (importá-lo não cria banco).
+- **Primeiro acesso:** sem usuários, cria `admin` com a senha de `JUTTA_ADMIN_PASSWORD`
+  ou, se ausente, uma senha aleatória impressa **uma vez** no log do serviço.
+  Variáveis: `JUTTA_ADMIN_LOGIN`, `JUTTA_ADMIN_PASSWORD`, `JUTTA_PANEL_DB`.
+- **Arquivos gerados** (em `runtime/`, ignorado pelo git): `painel.db`,
+  `painel_secret.key` (assinatura da sessão).
+- **Segurança:** senha `scrypt`; sessão assinada (12 h, `HttpOnly`, `SameSite=Lax`),
+  regenerada no login; CSRF em toda requisição que altera estado; bloqueio de
+  60 s após 5 falhas seguidas (login+IP); resposta idêntica para login inexistente
+  ou senha errada; usuário desativado perde a sessão na hora.
+- **Regras de usuário:** login `[a-z0-9._-]{3,32}`, senha ≥ 8; não remove a si mesmo
+  nem o último admin ativo; tudo auditado.
+- **Páginas ainda em construção** (exibem aviso; permissões já valem): Monitoramento,
+  Câmeras, Relatório, Destinos, Configurações.
+- **Pendente de produção:** ligar `https_only` do cookie quando houver TLS/proxy.

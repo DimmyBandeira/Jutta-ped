@@ -1,0 +1,77 @@
+{% set player_url = camera.go2rtc_player_url or '' %}
+{% set has_localhost = '127.0.0.1' in player_url or 'localhost' in player_url %}
+
+<div id="camera-card-{{ camera.id }}"
+     class="relative aspect-video rounded-2xl overflow-hidden border border-ink-600 bg-black group"
+     data-camera-id="{{ camera.id }}"
+     data-player-url="{{ player_url }}">
+
+  <!-- Player (iframe go2rtc). src é controlado por JS no Play/Pause. -->
+  <iframe id="player-{{ camera.id }}"
+          class="w-full h-full border-0 bg-black"
+          src="" allow="autoplay; fullscreen"
+          referrerpolicy="no-referrer"></iframe>
+
+  <!-- Overlay reservado para bounding boxes (fase de IA) -->
+  <canvas id="overlay-{{ camera.id }}"
+          class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
+
+  <!-- Sem player configurado -->
+  {% if not player_url %}
+  <div class="absolute inset-0 flex items-center justify-center text-xs text-slate-500">
+    Sem URL go2rtc configurada
+  </div>
+  {% endif %}
+
+  <!-- Aviso: URL com 127.0.0.1 não funciona para browsers remotos -->
+  {% if has_localhost %}
+  <div class="absolute top-8 inset-x-0 mx-3 mt-1 px-2 py-1 rounded bg-amber-500/20 border border-amber-500/40
+              text-xs text-amber-300 text-center pointer-events-none">
+    ⚠ URL usa 127.0.0.1 — altere GO2RTC_BASE_URL no .env para o IP do servidor
+  </div>
+  {% endif %}
+
+  <!-- Barra superior: nome + status do stream -->
+  <div class="absolute top-0 inset-x-0 px-3 py-2 flex items-center justify-between
+              bg-gradient-to-b from-black/70 to-transparent text-xs">
+    <div class="flex items-center gap-2 min-w-0">
+      <span class="w-2 h-2 rounded-full flex-shrink-0 {{ 'bg-emerald-400' if camera.is_active else 'bg-slate-500' }}"></span>
+      <span class="font-medium truncate">{{ camera.name }}</span>
+    </div>
+    <div class="flex items-center gap-2 flex-shrink-0">
+      <span id="stream-status-{{ camera.id }}"></span>
+      <span class="text-slate-300">
+        {{ camera.manufacturer.name if camera.manufacturer else 'Genérico' }} · ch {{ camera.channel }}
+      </span>
+    </div>
+  </div>
+
+  <!-- Barra inferior: controles (visível no hover) -->
+  <div class="absolute bottom-0 inset-x-0 px-3 py-2 flex items-center justify-between
+              bg-gradient-to-t from-black/70 to-transparent text-xs
+              opacity-0 group-hover:opacity-100 transition">
+    <span class="{{ 'text-emerald-400' if camera.is_active else 'text-slate-400' }}">
+      {{ 'ATIVO' if camera.is_active else 'INATIVO' }}
+    </span>
+    <div class="flex gap-2">
+      <button hx-get="/cameras/{{ camera.id }}/test-stream"
+              hx-target="#stream-status-{{ camera.id }}"
+              hx-swap="innerHTML"
+              hx-disabled-elt="this"
+              class="px-3 py-1 rounded-lg bg-ink-700 hover:bg-ink-600 transition">
+        Testar
+      </button>
+      {% if player_url %}
+      <a href="{{ player_url }}" target="_blank" rel="noopener"
+         class="px-3 py-1 rounded-lg bg-ink-700 hover:bg-ink-600 transition">
+        ↗
+      </a>
+      {% endif %}
+      <button onclick="togglePlay({{ camera.id }})"
+              id="btn-play-{{ camera.id }}"
+              class="px-3 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 transition">
+        Play
+      </button>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,20 @@
+{# Linhas do relatorio de alertas. Contexto: alertas (eventos_pediatria do banco). #}
+<table>
+  <thead><tr><th>Quando</th><th>Câmera</th><th>Estado</th><th>Confiança</th><th>Ciência</th><th>Envio</th><th>Evidência</th></tr></thead>
+  <tbody>
+    {% for a in alertas %}
+    <tr>
+      <td>{{ a.criado_em.strftime('%d/%m %H:%M:%S') }}</td>
+      <td>{{ a.camera_nome }}</td>
+      <td>{{ 'Desacompanhada' if a.estado == 'CHILD_ALONE' else 'Separada do adulto' }}{% if a.suprimido %} <span class="badge neutro">suprimido</span>{% endif %}</td>
+      <td>{{ (a.confianca * 100)|round|int ~ '%' if a.confianca is not none else '—' }}</td>
+      <td>{% if a.reconhecido_em %}{{ a.reconhecido_por }} · {{ a.reconhecido_em.strftime('%H:%M:%S') }}{% elif a.suprimido %}—{% else %}<span class="badge aviso-amarelo">pendente</span>{% endif %}</td>
+      <td>{% for e in a.entregas %}<span class="badge {{ 'online' if e.sucesso else 'offline' }}" title="{{ e.detalhe }}">{{ e.destino_nome }}</span> {% else %}<span class="aviso">—</span>{% endfor %}</td>
+      <td>{% if a.crop_url %}<a href="{{ a.crop_url }}" target="_blank" rel="noopener">recorte</a>{% endif %}
+          {% if a.annotated_url %} · <a href="{{ a.annotated_url }}" target="_blank" rel="noopener">frame</a>{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="vazio">Nenhum alerta no período.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>

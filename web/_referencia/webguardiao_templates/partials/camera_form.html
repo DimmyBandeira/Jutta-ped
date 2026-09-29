@@ -1,0 +1,154 @@
+{% set c = camera %}
+<div class="w-full max-w-2xl max-h-[92vh] overflow-y-auto bg-ink-800 border border-ink-600 rounded-2xl shadow-2xl">
+  <div class="px-5 py-4 border-b border-ink-600 flex items-center justify-between sticky top-0 bg-ink-800 z-10">
+    <h2 class="font-semibold">{{ 'Editar câmera' if c else 'Nova câmera' }}</h2>
+    <button onclick="closeModal()" class="text-slate-400 hover:text-slate-200 text-lg leading-none">✕</button>
+  </div>
+
+  <form method="post" action="{{ action }}" class="p-5 space-y-5 text-sm">
+
+    <!-- ── Seção 1: Câmera ─────────────────────────────── -->
+    <fieldset class="border border-ink-600 rounded-xl p-4 space-y-3">
+      <legend class="text-xs font-semibold text-cyan-400 px-2">Câmera</legend>
+
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Nome *</label>
+        <input name="name" required value="{{ c.name if c else '' }}" placeholder="ex.: Recepção Principal"
+               class="w-full px-3 py-2 rounded-lg bg-ink-900 border border-ink-600 focus:border-cyan-500 outline-none" />
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Fabricante</label>
+          <select name="manufacturer_id" id="f-manufacturer"
+                  hx-get="/partials/preset-options" hx-target="#f-preset" hx-swap="innerHTML"
+                  hx-trigger="change" hx-include="this"
+                  class="w-full px-3 py-2 rounded-lg bg-ink-900 border border-ink-600 focus:border-cyan-500 outline-none">
+            <option value="">Genérico</option>
+            {% for m in manufacturers %}
+            <option value="{{ m.id }}" {{ 'selected' if c and c.manufacturer_id == m.id else '' }}>
+              {{ m.name }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Preset RTSP</label>
+          <select name="preset_id" id="f-preset"
+                  class="w-full px-3 py-2 rounded-lg bg-ink-900 border border-ink-600 focus:border-cyan-500 outline-none">
+            {% include "partials/preset_options.html" %}
+          </select>
+        </div>
+      </div>
+    </fieldset>
+
+    <!-- ── Seção 2: Conexão ────────────────────────────── -->
+    <fieldset class="border border-ink-600 rounded-xl p-4 space-y-3">
+      <legend class="text-xs font-semibold text-cyan-400 px-2">Conexão</legend>
+
+      <div class="grid grid-cols-3 gap-3">
+        <div class="col-span-2">
+          <label class="block text-xs text-slate-400 mb-1">Host / IP *</label>
+          <input name="host" required value="{{ c.host if c else '' }}" placeholder="192.168.1.100"
+                 class="w-full px-3 py-2 rounded-lg bg-ink-900 border border-ink-600 focus:border-cyan-500 outline-none" />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Porta RTSP</label>
+          <input name="port" type="number" value="{{ c.port if c else 554 }}"
+                 class="w-full px-3 py-2 rounded-lg bg-ink-900 border border-ink-600 focus:border-cyan-500 outline-none" />
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Usuário</label>
+          <input name="username" value="{{ c.username if c else '' }}" placeholder="admin"
+                 class="w-full px-3 py-2 rounded-lg bg-ink-900 border border-ink-600 focus:border-cyan-500 outline-none" />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Senha</label>
+          <input name="password" type="password" value="{{ c.password if c else '' }}"
+                 class="w-full px-3 py-2 rounded-lg bg-ink-900 border border-ink-600 focus:border-cyan-500 outline-none" />
+        </div>
+      </div>
+
+      <div class="grid grid-cols-3 gap-3 items-end">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Canal</label>
+          <input name="channel" type="number" min="1" value="{{ c.channel if c else 1 }}"
+                 class="w-full px-3 py-2 rounded-lg bg-ink-900 border border-ink-600 focus:border-cyan-500 outline-none" />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">go2rtc stream name</label>
+          <input name="go2rtc_stream_name" value="{{ c.go2rtc_stream_name if c else '' }}"
+                 placeholder="ex.: camera_01"
+                 class="w-full px-3 py-2 rounded-lg bg-ink-900 border border-ink-600 focus:border-cyan-500 outline-none" />
+        </div>
+        <div>
+          <button type="button"
+                  hx-post="/cameras/preview-rtsp" hx-target="#rtsp-preview" hx-swap="innerHTML"
+                  hx-include="closest form"
+                  class="w-full px-3 py-2 rounded-lg bg-ink-700 hover:bg-ink-600 text-xs">
+            ⟳ Gerar RTSP
+          </button>
+        </div>
+      </div>
+
+      <!-- Preview das URLs geradas (colapsado visualmente) -->
+      <div id="rtsp-preview" class="text-xs">
+        {% include "partials/rtsp_preview.html" %}
+      </div>
+    </fieldset>
+
+    <!-- ── Seção 3: Inteligência Artificial ───────────── -->
+    <fieldset class="border border-ink-600 rounded-xl p-4 space-y-2">
+      <legend class="text-xs font-semibold text-cyan-400 px-2">Inteligência Artificial</legend>
+
+      <label class="flex items-start gap-3 p-3 rounded-xl bg-ink-900 border border-ink-600 cursor-pointer
+                    hover:border-cyan-600 transition has-[:checked]:border-cyan-500">
+        <input type="checkbox" name="ai_person_bag_enabled"
+               {{ 'checked' if (not c) or c.ai_person_bag_enabled else '' }}
+               class="accent-cyan-500 w-4 h-4 mt-0.5 flex-shrink-0">
+        <div>
+          <div class="font-medium">Pessoa + Bagagem</div>
+          <div class="text-xs text-slate-400 mt-0.5">
+            Detecta pessoas e itens carregados (mochila, bolsa, mala)
+            · <span class="text-slate-500">yolo11n · OpenVINO</span>
+          </div>
+        </div>
+      </label>
+
+      <p class="text-xs text-slate-600 px-1">
+        Mais modelos disponíveis nas próximas versões.
+      </p>
+    </fieldset>
+
+    <!-- ── Flags ──────────────────────────────────────── -->
+    <div class="flex items-center gap-5 px-1">
+      <label class="flex items-center gap-2 text-xs cursor-pointer">
+        <input type="checkbox" name="is_active"
+               {{ 'checked' if (not c) or c.is_active else '' }}
+               class="accent-cyan-500"> Câmera ativa
+      </label>
+      <label class="flex items-center gap-2 text-xs cursor-pointer">
+        <input type="checkbox" name="is_nvr"
+               {{ 'checked' if c and c.is_nvr else '' }}
+               class="accent-cyan-500"> NVR / DVR
+      </label>
+      <label class="flex items-center gap-2 text-xs cursor-pointer">
+        <input type="checkbox" name="is_thermal"
+               {{ 'checked' if c and c.is_thermal else '' }}
+               class="accent-cyan-500"> Câmera térmica
+      </label>
+    </div>
+
+    <!-- ── Ações ──────────────────────────────────────── -->
+    <div class="flex justify-end gap-2 pt-1 border-t border-ink-600">
+      <button type="button" onclick="closeModal()"
+              class="px-4 py-2 rounded-lg bg-ink-700 hover:bg-ink-600">Cancelar</button>
+      <button class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 font-medium">
+        {{ 'Salvar' if c else 'Cadastrar' }}
+      </button>
+    </div>
+  </form>
+</div>

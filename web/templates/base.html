@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{% block title %}Jutta Ped{% endblock %}</title>
+<script src="/static/vendor/htmx.min.js"></script>
+<script src="/static/vendor/htmx-ext-sse.js"></script>
+<link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body hx-ext="sse" hx-headers='{"X-CSRF-Token": "{{ csrf_token or '' }}"}'>
+<header>
+  <h1>Jutta Ped</h1>
+  {% if usuario_logado %}
+  <nav>
+    <a href="/painel/monitoramento" class="{{ 'ativo' if ativo == 'monitoramento' else '' }}">Monitoramento</a>
+    <a href="/painel/cameras" class="{{ 'ativo' if ativo == 'cameras' else '' }}">Câmeras</a>
+    <a href="/painel/relatorio" class="{{ 'ativo' if ativo == 'relatorio' else '' }}">Relatório</a>
+    {% if eh_admin_logado %}
+    <a href="/painel/destinos" class="{{ 'ativo' if ativo == 'destinos' else '' }}">Destinos</a>
+    <a href="/painel/configuracoes" class="{{ 'ativo' if ativo == 'configuracoes' else '' }}">Configurações</a>
+    <a href="/painel/usuarios" class="{{ 'ativo' if ativo == 'usuarios' else '' }}">Usuários</a>
+    {% endif %}
+  </nav>
+  <div style="display:flex; align-items:center; gap:.9rem">
+    <span class="aviso" style="margin:0">{{ usuario_logado.login }}{% if eh_admin_logado %} · admin{% endif %}</span>
+    <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn" type="submit">Sair</button></form>
+  </div>
+  {% endif %}
+</header>
+<main class="{% block main_class %}{% endblock %}">
+{% block content %}{% endblock %}
+</main>
+
+{% if usuario_logado %}
+<!-- Popups de alerta: o servidor empurra <div class="popup"> via SSE (event: popup). -->
+<div id="popup-stack" aria-live="assertive"
+     sse-connect="/painel/stream" sse-swap="popup" hx-swap="beforeend">
+  {# popups pendentes (nao reconhecidos) reaparecem ao recarregar/navegar #}
+  {% for ev in popups_pendentes or [] %}{% include "partials/popup.html" %}{% endfor %}
+</div>
+{% endif %}
+<script src="/static/js/popup.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

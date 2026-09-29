@@ -1,0 +1,71 @@
+<form class="painel"
+      {% if camera %}hx-put="/painel/cameras/{{ camera.id }}"{% else %}hx-post="/painel/cameras"{% endif %}
+      hx-target="#form-area" hx-swap="innerHTML">
+  <h3>{{ 'Editar câmera' if camera else 'Nova câmera' }}</h3>
+
+  <div class="cartao">
+    <h4>Dados da câmera</h4>
+    <div class="linha">
+      <div><label>Nome</label><input name="nome" value="{{ camera.nome if camera else '' }}" required></div>
+    </div>
+    <div class="linha">
+      <div>
+        <label>Identificador externo (opcional)</label>
+        <input name="identificador_externo" value="{{ camera.identificador_externo if camera and camera.identificador_externo else '' }}" placeholder="opcional — deixe em branco pra usar o número interno">
+        <p class="aviso">Usado por destinos que exigem um número/ID próprio para a câmera (ex.: GPS Indoor).</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="cartao">
+    <h4>Fabricante e conexão</h4>
+    <div class="linha">
+      <div>
+        <label>Fabricante</label>
+        <select name="fabricante" id="select-fabricante"
+                hx-get="/painel/cameras/campos-fonte" hx-target="#campos-fonte" hx-swap="innerHTML"
+                hx-include="[name='fabricante'],[name='camera_id']" hx-trigger="change">
+          <option value="intelbras" {{ 'selected' if camera and camera.fabricante.value=='intelbras' else '' }}>Intelbras</option>
+          <option value="hikvision" {{ 'selected' if camera and camera.fabricante.value=='hikvision' else '' }}>Hikvision</option>
+          <option value="rtsp_generico" {{ 'selected' if camera and camera.fabricante.value=='rtsp_generico' else '' }}>RTSP genérico (URL completa)</option>
+          <option value="go2rtc_teste" {{ 'selected' if camera and camera.fabricante.value=='go2rtc_teste' else '' }}>go2rtc — stream de teste (sem câmera real)</option>
+        </select>
+        <input type="hidden" name="camera_id" value="{{ camera.id if camera else '' }}">
+      </div>
+    </div>
+
+    <div id="campos-fonte">
+      {% include "cameras/_campos_fonte.html" %}
+    </div>
+  </div>
+
+  <div class="cartao">
+    <h4>Análise por IA</h4>
+    <label class="opcao-grande">
+      <input type="checkbox" name="ia_pediatria" {{ 'checked' if (camera.ia_pediatria if camera else true) else '' }}>
+      Ativar IA Pediatria nesta câmera (alerta de criança desacompanhada)
+    </label>
+    <p class="aviso">A análise usa o stream já retransmitido pelo go2rtc — não abre outra conexão na câmera.</p>
+  </div>
+
+  <div class="cartao">
+    <h4>Para onde enviar o alerta</h4>
+    <p class="aviso">Marque um ou mais destinos que devem receber o alerta desta câmera.</p>
+    <div class="checkboxes">
+      {% for d in destinos %}
+      <label class="opcao-destino">
+        <input type="checkbox" name="destino_ids" value="{{ d.id }}" {{ 'checked' if d.id in destinos_vinculados_ids else '' }}>
+        <span>{{ d.nome }}</span>
+        <span class="tipo-tag">{{ 'GPS Indoor' if d.tipo.value == 'gpsindoor' else 'WifiPTT' }}</span>
+      </label>
+      {% else %}
+      <div class="aviso">Nenhum destino cadastrado ainda — cadastre em "Destinos" primeiro.</div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="rodape-form">
+    <button class="btn primary" type="submit">Salvar</button>
+    <button class="btn" type="button" hx-get="/painel/cameras/cancelar" hx-target="#form-area" hx-swap="innerHTML">Cancelar</button>
+  </div>
+</form>

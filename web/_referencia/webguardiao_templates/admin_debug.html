@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}Debug · {{ app_name }}{% endblock %}
+{% block heading %}Diagnóstico do Sistema{% endblock %}
+
+{% block content %}
+<div class="space-y-6 text-sm">
+
+  <!-- go2rtc status -->
+  <section class="bg-ink-800 border border-ink-600 rounded-2xl p-5">
+    <h2 class="font-semibold mb-4 text-slate-200">go2rtc</h2>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+      <div class="bg-ink-900 rounded-xl p-4 border border-ink-600">
+        <div class="text-xs text-slate-400 mb-1">Status</div>
+        {% if go2rtc_ok %}
+        <span class="text-emerald-400 font-medium">✓ Online</span>
+        {% else %}
+        <span class="text-red-400 font-medium">✗ Offline / Inacessível</span>
+        {% endif %}
+      </div>
+
+      <div class="bg-ink-900 rounded-xl p-4 border border-ink-600">
+        <div class="text-xs text-slate-400 mb-1">URL base (.env GO2RTC_BASE_URL)</div>
+        <code class="text-cyan-300 break-all">{{ go2rtc_url }}</code>
+      </div>
+
+      <div class="bg-ink-900 rounded-xl p-4 border border-ink-600">
+        <div class="text-xs text-slate-400 mb-1">Streams registradas no go2rtc</div>
+        {% if go2rtc_streams %}
+          {% for s in go2rtc_streams %}
+          <div class="text-slate-300 font-mono text-xs">{{ s }}</div>
+          {% endfor %}
+        {% else %}
+          <span class="text-slate-600">Nenhuma (ou go2rtc offline)</span>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if go2rtc_error %}
+    <div class="mt-3 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+      Erro: {{ go2rtc_error }}
+    </div>
+    {% endif %}
+
+    {% if not go2rtc_ok %}
+    <div class="mt-3 text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 space-y-1">
+      <div class="font-semibold">Como resolver:</div>
+      <div>1. Verifique se o go2rtc está rodando: <code>systemctl status go2rtc</code></div>
+      <div>2. Confirme a porta: <code>ss -tlnp | grep go2rtc</code></div>
+      <div>3. Ajuste o <code>GO2RTC_BASE_URL</code> no <code>.env</code> e reinicie o WebGuardião</div>
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- Câmeras -->
+  <section class="bg-ink-800 border border-ink-600 rounded-2xl p-5">
+    <h2 class="font-semibold mb-4 text-slate-200">Câmeras cadastradas</h2>
+
+    {% if not cam_debug %}
+    <p class="text-slate-500">Nenhuma câmera cadastrada.</p>
+    {% else %}
+    <div class="space-y-3">
+      {% for d in cam_debug %}
+      {% set cam = d.camera %}
+      <div class="bg-ink-900 border rounded-xl p-4
+                  {{ 'border-emerald-600/40' if d.in_go2rtc else 'border-red-600/40' }}">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full {{ 'bg-emerald-400' if cam.is_active else 'bg-slate-500' }}"></span>
+            <span class="font-medium">{{ cam.name }}</span>
+            <span class="text-xs text-slate-500">· {{ cam.manufacturer.name if cam.manufacturer else 'Genérico' }} · ch {{ cam.channel }}</span>
+          </div>
+          <div class="flex gap-2">
+            {% if d.in_go2rtc %}
+            <span class="text-xs px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300">✓ no go2rtc</span>
+            {% elif d.stream_name %}
+            <span class="text-xs px-2 py-0.5 rounded bg-red-500/15 text-red-300">✗ não está no go2rtc</span>
+            {% else %}
+            <span class="text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-400">sem stream name</span>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs font-mono">
+          <div>
+            <span class="text-slate-500">stream name: </span>
+            <span class="text-cyan-300">{{ d.stream_name or '—' }}</span>
+          </div>
+          <div>
+            <span class="text-slate-500">player URL: </span>
+            {% if d.player_url %}
+              <a href="{{ d.player_url }}" target="_blank"
+                 class="text-cyan-300 hover:text-cyan-200 underline break-all">{{ d.player_url }}</a>
+              {% if d.has_localhost %}
+              <span class="ml-1 text-amber-400">⚠ 127.0.0.1</span>
+              {% endif %}
+            {% else %}
+              <span class="text-slate-600">—</span>
+            {% endif %}
+          </div>
+          <div>
+            <span class="text-slate-500">RTSP main: </span>
+            <span class="text-slate-400 break-all">{{ cam.rtsp_main_url or '—' }}</span>
+          </div>
+          <div>
+            <span class="text-slate-500">host: </span>
+            <span class="text-slate-400">{{ cam.host }}:{{ cam.port }}</span>
+          </div>
+        </div>
+
+        {% if d.has_localhost %}
+        <div class="mt-3 text-xs text-amber-300 bg-amber-500/10 rounded-lg p-2">
+          ⚠ Player URL usa <code>127.0.0.1</code> — browsers de outras máquinas não conseguem conectar.
+          Altere <code>GO2RTC_BASE_URL=http://IP_DO_SERVIDOR:PORTA</code> no <code>.env</code>,
+          reinicie o sistema e recadastre (ou edite) a câmera para regenerar a URL.
+        </div>
+        {% endif %}
+
+        {% if d.stream_name and not d.in_go2rtc %}
+        <div class="mt-3 text-xs text-red-300 bg-red-500/10 rounded-lg p-2">
+          ✗ Stream "<code>{{ d.stream_name }}</code>" não encontrada no go2rtc.
+          Verifique se o nome é idêntico ao do <code>go2rtc.yaml</code>
+          e se o go2rtc está rodando.
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- Ações rápidas -->
+  <section class="bg-ink-800 border border-ink-600 rounded-2xl p-5">
+    <h2 class="font-semibold mb-4 text-slate-200">Verificações rápidas</h2>
+    <div class="space-y-2 text-xs font-mono text-slate-400">
+      <div>Testar API do go2rtc diretamente:
+        <a href="{{ go2rtc_url }}/api/streams" target="_blank"
+           class="text-cyan-400 hover:underline ml-1">{{ go2rtc_url }}/api/streams ↗</a>
+      </div>
+      <div>Testar player go2rtc diretamente:
+        <a href="{{ go2rtc_url }}" target="_blank"
+           class="text-cyan-400 hover:underline ml-1">{{ go2rtc_url }} ↗</a>
+      </div>
+    </div>
+    <div class="mt-4 text-xs text-slate-500">
+      Comandos no servidor Linux:
+      <pre class="mt-2 bg-ink-900 rounded-lg p-3 text-slate-300 overflow-x-auto">
+# Verificar go2rtc
+systemctl status go2rtc
+curl -s http://127.0.0.1:8080/api/streams | python3 -m json.tool
+
+# Ver logs do WebGuardião
+journalctl -u webguardiao -f
+
+# Testar conectividade com câmera (requer ffprobe)
+ffprobe rtsp://admin:SENHA@IP_CAMERA:554/cam/realmonitor?channel=1&subtype=0</pre>
+    </div>
+  </section>
+
+</div>
+{% endblock %}

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Configurações — Jutta Ped{% endblock %}
+{% block content %}
+<h3 style="margin-top:0">Configurações</h3>
+<p class="aviso">Alterações aqui valem na hora — não precisa reiniciar o serviço.</p>
+{% if salvo %}<p class="badge online" style="margin-bottom:1rem">Salvo!</p>{% endif %}
+
+<form class="painel" method="post" action="/painel/configuracoes">
+  <div class="cartao">
+    <h4>go2rtc</h4>
+    <label>API de administração (servidor → go2rtc)</label>
+    <input name="go2rtc_api_url" value="{{ config.go2rtc_api_url }}" required placeholder="http://127.0.0.1:1984">
+    <label>Endereço do player visto pelo navegador do operador</label>
+    <input name="go2rtc_public_url" value="{{ config.go2rtc_public_url }}" required placeholder="http://IP-DO-SERVIDOR:1984">
+    <p class="aviso">Não use 127.0.0.1 aqui se o painel for aberto de outra máquina.</p>
+    <label>Base RTSP de retransmissão (usada pela IA)</label>
+    <input name="go2rtc_rtsp_url" value="{{ config.go2rtc_rtsp_url }}" required placeholder="rtsp://127.0.0.1:8554">
+    <p class="aviso">Estado da sincronização: <strong>{{ sync_status or '—' }}</strong></p>
+  </div>
+
+  <div class="cartao">
+    <h4>Serviço de IA</h4>
+    <label>Cooldown entre alertas da mesma criança/câmera (segundos)</label>
+    <input name="cooldown_seconds" type="number" min="0" value="{{ config.cooldown_seconds }}" required>
+    <label>Retenção de evidências (dias)</label>
+    <input name="evidence_retention_days" type="number" min="1" value="{{ config.evidence_retention_days }}" required>
+  </div>
+
+  <div class="cartao">
+    <h4>Endereço público do painel</h4>
+    <label>URL usada em links de alerta enviados aos destinos</label>
+    <input name="public_base_url" value="{{ config.public_base_url }}" placeholder="http://seu-ip-ou-ddns:8765">
+  </div>
+
+  <div class="rodape-form">
+    <button class="btn primary" type="submit">Salvar</button>
+  </div>
+</form>
+{% endblock %}

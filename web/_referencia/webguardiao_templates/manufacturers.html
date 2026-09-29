@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Fabricantes · {{ app_name }}{% endblock %}
+{% block heading %}Fabricantes & Presets{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5">
+  <!-- Lista de fabricantes -->
+  <div id="manufacturer-table">
+    {% include "partials/manufacturer_table.html" %}
+  </div>
+
+  <!-- Novo fabricante -->
+  <aside class="space-y-5">
+    <div class="bg-ink-800 border border-ink-600 rounded-2xl p-4">
+      <h2 class="text-sm font-semibold mb-3">Novo fabricante</h2>
+      <form method="post" action="/manufacturers" class="space-y-3 text-sm">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Nome</label>
+          <input name="name" required
+                 class="w-full px-3 py-2 rounded-lg bg-ink-900 border border-ink-600 focus:border-cyan-500 outline-none" />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Slug (opcional)</label>
+          <input name="slug" placeholder="gerado automaticamente"
+                 class="w-full px-3 py-2 rounded-lg bg-ink-900 border border-ink-600 focus:border-cyan-500 outline-none" />
+        </div>
+        <button class="w-full py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 transition">Adicionar</button>
+      </form>
+    </div>
+  </aside>
+</div>
+{% endblock %}

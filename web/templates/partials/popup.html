@@ -1,0 +1,22 @@
+{# Um popup de alerta. Renderizado no servidor e empurrado via SSE (event: popup)
+   e tambem no carregamento da pagina (popups pendentes). Contexto: ev (ver docs/painel_web.md §6). #}
+<div class="popup" id="popup-{{ ev.event_id }}" data-event-id="{{ ev.event_id }}" role="alert">
+  <div class="cab">
+    <span>{{ 'Criança desacompanhada' if ev.estado == 'CHILD_ALONE' else 'Criança separada do adulto' }}</span>
+    <span class="aviso" style="margin:0">{{ ev.quando_fmt }}</span>
+  </div>
+  <div class="corpo">
+    {% if ev.crop_url %}<img src="{{ ev.crop_url }}" alt="Recorte da criança">{% endif %}
+    <div>
+      <div><strong style="color:var(--text)">{{ ev.camera_nome }}</strong></div>
+      {% if ev.confianca is not none %}<div>Confiança: {{ (ev.confianca * 100)|round|int }}%</div>{% endif %}
+      <div>Motivo: {{ ev.motivo or '—' }}</div>
+    </div>
+  </div>
+  <div class="acoes">
+    {% if ev.annotated_url %}<a class="btn" href="{{ ev.annotated_url }}" target="_blank" rel="noopener">Ver frame</a>{% endif %}
+    <button class="btn primary"
+            hx-post="/painel/popups/{{ ev.event_id }}/ack"
+            hx-target="#popup-{{ ev.event_id }}" hx-swap="outerHTML">Ciente</button>
+  </div>
+</div>

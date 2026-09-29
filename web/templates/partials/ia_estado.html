@@ -1,0 +1,7 @@
+{# Badge do estado operacional da IA. Contexto: c.ia_estado, c.ia_ativa. #}
+{% if not c.ia_ativa %}<span class="badge neutro">IA desligada</span>
+{% elif c.ia_estado in ('CRIANCA_DESACOMPANHADA',) %}<span class="badge alerta">Criança desacompanhada</span>
+{% elif c.ia_estado == 'CRIANCA_ACOMPANHADA' %}<span class="badge online">Criança acompanhada</span>
+{% elif c.ia_estado == 'ERROR' %}<span class="badge offline">Erro na IA</span>
+{% elif c.ia_estado in ('UNCERTAIN',) %}<span class="badge aviso-amarelo">Incerto</span>
+{% else %}<span class="badge online">{{ 'Analisando' if c.ia_estado == 'ANALISANDO' else (c.ia_estado or 'Analisando')|title }}</span>{% endif %}

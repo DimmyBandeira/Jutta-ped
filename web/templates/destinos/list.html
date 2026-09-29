@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Destinos — Jutta Ped{% endblock %}
+{% block content %}
+<div class="barra-acoes">
+  <button class="btn primary" hx-get="/painel/destinos/novo" hx-target="#form-area" hx-swap="innerHTML">+ Novo destino</button>
+</div>
+<div id="form-area"></div>
+{% include "destinos/_lista.html" %}
+{% endblock %}

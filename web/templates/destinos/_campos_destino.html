@@ -1,0 +1,33 @@
+{% if tipo == 'wifiptt' %}
+<div class="cartao">
+  <h4>WifiPTT Central</h4>
+  <div class="linha">
+    <div><label>Host/IP</label><input name="wifiptt_host" value="{{ destino.wifiptt_host if destino else '' }}" required></div>
+    <div><label>Porta</label><input name="wifiptt_porta" type="number" value="{{ destino.wifiptt_porta if destino else 6162 }}" required></div>
+  </div>
+  <div class="linha">
+    <div><label>Domínio (UID combinado)</label><input name="wifiptt_domain" value="{{ destino.wifiptt_domain if destino else '' }}" required></div>
+    <div><label>Canal de destino (UID)</label><input name="wifiptt_canal_destino" value="{{ destino.wifiptt_canal_destino if destino else '' }}" required></div>
+  </div>
+  <div class="linha">
+    <div><label>Login</label><input name="wifiptt_login" value="{{ destino.wifiptt_login if destino else '' }}" required></div>
+    <div><label>Senha{% if destino and destino.wifiptt_senha_enc %} (deixe em branco pra manter a atual){% endif %}</label>
+      <input name="wifiptt_senha" type="password" {{ '' if destino else 'required' }}></div>
+  </div>
+</div>
+{% elif tipo == 'webhook' %}
+<div class="cartao">
+  <h4>Webhook</h4>
+  <div class="linha">
+    <div style="flex:3"><label>URL</label><input name="webhook_url" value="{{ destino.webhook_url if destino and destino.webhook_url else '' }}" placeholder="https://..." required></div>
+    <div><label>Token (Bearer, opcional)</label><input name="webhook_token" type="password" placeholder="{{ 'em branco = manter' if destino else '' }}"></div>
+  </div>
+  <p class="aviso">Envia um POST JSON no formato risk_event (plugin/schemas/event.schema.json).</p>
+</div>
+{% else %}
+<div class="cartao">
+  <h4>GPS Indoor</h4>
+  <label>Endpoint</label>
+  <input name="gpsindoor_endpoint" value="{{ destino.gpsindoor_endpoint if destino and destino.gpsindoor_endpoint else 'https://www.gpsindoor.com.br/DEV/camera.php' }}" required>
+</div>
+{% endif %}

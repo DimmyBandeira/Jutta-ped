@@ -1,0 +1,19 @@
+<tr id="destino-{{ d.id }}">
+  <td>{{ d.nome }}</td>
+  <td>{{ {'gpsindoor':'GPS Indoor','wifiptt':'WifiPTT Central','webhook':'Webhook'}[d.tipo.value] }}</td>
+  <td>
+    {% if d.tipo.value == 'gpsindoor' %}
+      <span class="aviso">{{ d.gpsindoor_endpoint }}</span>
+    {% elif d.tipo.value == 'webhook' %}
+      <span class="aviso">{{ d.webhook_url }}</span>
+    {% else %}
+      <span class="aviso">{{ d.wifiptt_host }}:{{ d.wifiptt_porta }} · domínio {{ d.wifiptt_domain }} · canal {{ d.wifiptt_canal_destino or '(pendente)' }}</span>
+    {% endif %}
+  </td>
+  <td><span class="badge {{ 'online' if d.ativo else 'neutro' }}">{{ 'Habilitado' if d.ativo else 'Desabilitado' }}</span><span id="teste-{{ d.id }}"></span></td>
+  <td style="white-space:nowrap">
+    <button class="btn" hx-post="/painel/destinos/{{ d.id }}/teste" hx-target="#teste-{{ d.id }}" hx-swap="innerHTML" hx-disabled-elt="this">Enviar teste</button>
+    <button class="btn" hx-get="/painel/destinos/{{ d.id }}/editar" hx-target="#form-area" hx-swap="innerHTML">Editar</button>
+    <button class="btn perigo" hx-delete="/painel/destinos/{{ d.id }}" hx-target="#destino-{{ d.id }}" hx-swap="outerHTML" hx-confirm="Remover o destino {{ d.nome }}? Câmeras vinculadas param de notificar aqui.">Remover</button>
+  </td>
+</tr>

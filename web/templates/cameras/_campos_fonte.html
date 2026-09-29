@@ -1,0 +1,52 @@
+{% if fabricante == 'go2rtc_teste' %}
+<div class="aviso" style="margin-bottom:0.75rem">
+  Modo de teste — usa um stream que já existe no go2rtc (ex.: um vídeo em loop) no lugar de
+  uma câmera real. Não escuta alarme nenhum; dispare pelo simulador. Comentar/remover esse
+  modo antes de ir pra produção.
+</div>
+<div class="linha">
+  <div style="flex:1">
+    <label>Arquivo go2rtc.yaml (opcional — só se a lista abaixo vier vazia)</label>
+    <input type="file" name="arquivo_yaml" accept=".yaml,.yml"
+           hx-post="/painel/cameras/streams-do-yaml" hx-target="#select-streams-go2rtc" hx-swap="innerHTML"
+           hx-trigger="change" hx-encoding="multipart/form-data">
+  </div>
+</div>
+<div class="linha">
+  <div style="flex:1">
+    <label>Câmera/stream a usar</label>
+    <select name="go2rtc_stream_existente" id="select-streams-go2rtc" required>
+      <option value="">-- selecione --</option>
+      {% for s in streams_disponiveis %}
+      <option value="{{ s }}" {{ 'selected' if camera and camera.go2rtc_stream_name == s else '' }}>{{ s }}</option>
+      {% else %}
+      <option value="" disabled>(nenhum stream encontrado no go2rtc — envie o arquivo acima)</option>
+      {% endfor %}
+    </select>
+  </div>
+</div>
+{% elif fabricante == 'rtsp_generico' %}
+<div class="linha">
+  <div style="flex:1"><label>URL RTSP completa</label>
+    <input name="rtsp_url" value="{{ camera.rtsp_url_mascarada if camera else '' }}" placeholder="rtsp://usuario:senha@host:554/caminho" required>
+    <p class="aviso">A senha é guardada cifrada; ao editar, a URL aparece mascarada — deixe como está para manter.</p></div>
+</div>
+{% else %}
+<div class="linha">
+  <div><label>IP</label><input name="ip" value="{{ camera.ip if camera else '' }}" required></div>
+  <div><label>Porta</label><input name="porta" type="number" value="{{ camera.porta if camera else 80 }}" required></div>
+  <div><label>Canal</label><input name="canal" type="number" value="{{ camera.canal if camera else 1 }}" required></div>
+  <div><label>Stream</label>
+    <select name="stream_tipo">
+      <option value="principal" {{ 'selected' if camera and camera.stream_tipo.value=='principal' else '' }}>Principal</option>
+      <option value="extra" {{ 'selected' if camera and camera.stream_tipo.value=='extra' else '' }}>Extra</option>
+    </select>
+  </div>
+</div>
+
+<div class="linha">
+  <div><label>Usuário</label><input name="usuario" value="{{ camera.usuario if camera else '' }}" required></div>
+  <div><label>Senha{% if camera %} (deixe em branco pra manter a atual){% endif %}</label>
+    <input name="senha" type="password" {{ '' if camera else 'required' }}></div>
+</div>
+{% endif %}

@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Usuários — Jutta Ped{% endblock %}
+{% block content %}
+<div class="barra-acoes">
+  <button class="btn primary" hx-get="/painel/usuarios/novo" hx-target="#form-area" hx-swap="innerHTML">+ Novo usuário</button>
+</div>
+<div id="form-area"></div>
+{% include "usuarios/_lista.html" %}
+{% endblock %}

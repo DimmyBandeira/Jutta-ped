@@ -1,0 +1,9 @@
+<tr id="usuario-{{ u.id }}">
+  <td>{{ u.login }}</td>
+  <td>{{ 'Administrador' if u.papel.value == 'admin' else 'Usuário comum' }}</td>
+  <td><span class="badge {{ 'online' if u.ativo else 'offline' }}">{{ 'Ativo' if u.ativo else 'Desativado' }}</span></td>
+  <td style="white-space:nowrap">
+    <button class="btn" hx-get="/painel/usuarios/{{ u.id }}/editar" hx-target="#form-area" hx-swap="innerHTML">Editar</button>
+    <button class="btn perigo" hx-delete="/painel/usuarios/{{ u.id }}" hx-target="#usuario-{{ u.id }}" hx-swap="outerHTML" hx-confirm="Remover o usuário {{ u.login }}?">Remover</button>
+  </td>
+</tr>

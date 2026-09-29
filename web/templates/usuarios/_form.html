@@ -1,0 +1,41 @@
+<form class="painel"
+      {% if usuario %}hx-put="/painel/usuarios/{{ usuario.id }}"{% else %}hx-post="/painel/usuarios"{% endif %}
+      hx-target="#form-area" hx-swap="innerHTML">
+  <h3>{{ 'Editar usuário' if usuario else 'Novo usuário' }}</h3>
+
+  <div class="cartao">
+    <div class="linha">
+      {% if usuario %}
+      <div><label>Usuário</label><input value="{{ usuario.login }}" disabled></div>
+      {% else %}
+      <div><label>Usuário (login)</label><input name="login" required autocapitalize="off" autocorrect="off"></div>
+      {% endif %}
+      <div>
+        <label>Papel</label>
+        <select name="papel">
+          <option value="comum" {{ 'selected' if usuario and usuario.papel.value=='comum' else '' }}>Usuário comum — vê tudo, exceto Configurações e Usuários</option>
+          <option value="admin" {{ 'selected' if usuario and usuario.papel.value=='admin' else '' }}>Administrador — vê e mexe em tudo</option>
+        </select>
+      </div>
+    </div>
+    <div class="linha">
+      <div>
+        <label>Senha{% if usuario %} (deixe em branco pra manter a atual){% endif %}</label>
+        <input name="senha" type="password" {{ '' if usuario else 'required' }}>
+      </div>
+      {% if usuario %}
+      <div style="align-self:flex-end; padding-bottom:.6rem">
+        <label class="opcao-grande" style="margin:0">
+          <input type="checkbox" name="ativo" {{ 'checked' if usuario.ativo else '' }}>
+          Usuário pode entrar (desmarque pra bloquear sem apagar)
+        </label>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="rodape-form">
+    <button class="btn primary" type="submit">Salvar</button>
+    <button class="btn" type="button" hx-get="/painel/usuarios/cancelar" hx-target="#form-area" hx-swap="innerHTML">Cancelar</button>
+  </div>
+</form>

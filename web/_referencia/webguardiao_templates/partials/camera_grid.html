@@ -1,0 +1,12 @@
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+  {% for camera in slots %}
+    {% if camera %}
+      {% include "partials/camera_card.html" %}
+    {% else %}
+      <div class="aspect-video rounded-2xl border border-dashed border-ink-600 bg-ink-800/40
+                  flex items-center justify-center text-slate-600 text-sm">
+        Slot vazio
+      </div>
+    {% endif %}
+  {% endfor %}
+</div>

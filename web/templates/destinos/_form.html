@@ -1,0 +1,41 @@
+<form class="painel"
+      {% if destino %}hx-put="/painel/destinos/{{ destino.id }}"{% else %}hx-post="/painel/destinos"{% endif %}
+      hx-target="#form-area" hx-swap="innerHTML">
+  <h3>{{ 'Editar destino' if destino else 'Novo destino' }}</h3>
+
+  <div class="cartao">
+    <h4>Identificação</h4>
+    <div class="linha">
+      <div><label>Nome/apelido</label><input name="nome" value="{{ destino.nome if destino else '' }}" required></div>
+      <div>
+        <label>Tipo</label>
+        <select name="tipo" id="select-tipo-destino"
+                hx-get="/painel/destinos/campos-tipo" hx-target="#campos-destino" hx-swap="innerHTML"
+                hx-include="[name='tipo'],[name='destino_id']" hx-trigger="change">
+          <option value="gpsindoor" {{ 'selected' if destino and destino.tipo.value=='gpsindoor' else '' }}>GPS Indoor</option>
+          <option value="wifiptt" {{ 'selected' if destino and destino.tipo.value=='wifiptt' else '' }}>WifiPTT Central</option>
+          <option value="webhook" {{ 'selected' if destino and destino.tipo.value=='webhook' else '' }}>Webhook (HTTP POST JSON)</option>
+        </select>
+        <input type="hidden" name="destino_id" value="{{ destino.id if destino else '' }}">
+      </div>
+    </div>
+  </div>
+
+  <div class="cartao">
+    <h4>Envio de alertas</h4>
+    <label class="opcao-grande">
+      <input type="checkbox" name="ativo" {{ 'checked' if destino and destino.ativo else '' }}>
+      Destino habilitado (só envia alertas enquanto estiver marcado)
+    </label>
+    <p class="aviso">Novos destinos nascem desabilitados: configure, use "Enviar teste" e só então habilite.</p>
+  </div>
+
+  <div id="campos-destino">
+    {% include "destinos/_campos_destino.html" %}
+  </div>
+
+  <div class="rodape-form">
+    <button class="btn primary" type="submit">Salvar</button>
+    <button class="btn" type="button" hx-get="/painel/destinos/cancelar" hx-target="#form-area" hx-swap="innerHTML">Cancelar</button>
+  </div>
+</form>

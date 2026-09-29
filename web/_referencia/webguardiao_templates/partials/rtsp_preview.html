@@ -1,0 +1,21 @@
+{# Funciona em 2 contextos: dentro do form (usa camera) e como resposta do preview (usa vars). #}
+{% set main = rtsp_main_url if rtsp_main_url is defined else (camera.rtsp_main_url if camera else '') %}
+{% set sub = rtsp_sub_url if rtsp_sub_url is defined else (camera.rtsp_sub_url if camera else '') %}
+{% set player = go2rtc_player_url if go2rtc_player_url is defined else (camera.go2rtc_player_url if camera else '') %}
+
+<div>
+  <label class="block text-xs text-slate-400 mb-1">RTSP principal (editável)</label>
+  <input name="rtsp_main_url" value="{{ main or '' }}"
+         class="w-full px-3 py-2 rounded-lg bg-ink-900 border border-ink-600 focus:border-cyan-500 outline-none font-mono text-xs" />
+</div>
+<div>
+  <label class="block text-xs text-slate-400 mb-1">RTSP secundário (editável)</label>
+  <input name="rtsp_sub_url" value="{{ sub or '' }}"
+         class="w-full px-3 py-2 rounded-lg bg-ink-900 border border-ink-600 focus:border-cyan-500 outline-none font-mono text-xs" />
+</div>
+<div>
+  <label class="block text-xs text-slate-400 mb-1">go2rtc player URL (editável)</label>
+  <input name="go2rtc_player_url" value="{{ player or '' }}"
+         placeholder="http://IP_GO2RTC:1984/stream.html?src=camera_01"
+         class="w-full px-3 py-2 rounded-lg bg-ink-900 border border-ink-600 focus:border-cyan-500 outline-none font-mono text-xs" />
+</div>

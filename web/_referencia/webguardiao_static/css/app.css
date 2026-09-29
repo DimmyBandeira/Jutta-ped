@@ -1,0 +1,29 @@
+/* WebGuardião Core — refinos leves sobre o Tailwind (dark NVR) */
+
+:root {
+  color-scheme: dark;
+}
+
+html, body {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Scrollbar discreta */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #0b0f17; }
+::-webkit-scrollbar-thumb { background: #243044; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #2f3e57; }
+
+/* Modal aberto via classe utilitária (controlada por JS) */
+#modal.open { display: flex; }
+
+/* Transições suaves padrão */
+a, button { transition: background-color .15s ease, color .15s ease, border-color .15s ease; }
+
+/* Cartão de câmera: leve realce ao passar o mouse */
+[id^="camera-card-"] { transition: box-shadow .2s ease, transform .2s ease; }
+[id^="camera-card-"]:hover { box-shadow: 0 0 0 1px rgba(34,211,238,.25), 0 8px 30px rgba(0,0,0,.45); }
+
+/* Indicador "ao vivo" piscando quando tocando */
+.live-dot { animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
