@@ -34,7 +34,7 @@
 {% else %}
 <div class="linha">
   <div><label>IP</label><input name="ip" value="{{ camera.ip if camera else '' }}" required></div>
-  <div><label>Porta</label><input name="porta" type="number" value="{{ camera.porta if camera else 80 }}" required></div>
+  <div><label>Porta RTSP</label><input name="porta" type="number" min="1" max="65535" value="{{ camera.porta if camera else 554 }}" required></div>
   <div><label>Canal</label><input name="canal" type="number" value="{{ camera.canal if camera else 1 }}" required></div>
   <div><label>Stream</label>
     <select name="stream_tipo">

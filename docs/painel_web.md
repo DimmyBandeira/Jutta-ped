@@ -186,7 +186,7 @@ Todos compilam com Jinja2 (verificado). Variáveis globais em `base.html`:
 
 0. **Documento e fusão de templates** (esta etapa) — concluída.
 1. Banco, login, sessão/CSRF, papéis e CRUD de usuários — **concluída** (§13).
-2. CRUD de câmeras + `Go2rtcSync` + launcher do go2rtc (§11: partida assíncrona/escalonada e limite de câmeras com IA).
+2. CRUD de câmeras + `Go2rtcSync` + launcher do go2rtc (§11: partida assíncrona/escalonada e limite de câmeras com IA) — **concluída** (§14).
 3. Monitoramento: player go2rtc e overlay (polling) + toggle de IA por câmera.
 4. `EventBus`, SSE, popups, ciência persistida.
 5. Relatório e dispatcher de destinos (GPS Indoor, WifiPTT, Webhook).
@@ -253,3 +253,43 @@ Código em `src/jutta_ped/painel/` (`db`, `models`, `security`, `deps`, `routes_
 - **Páginas ainda em construção** (exibem aviso; permissões já valem): Monitoramento,
   Câmeras, Relatório, Destinos, Configurações.
 - **Pendente de produção:** ligar `https_only` do cookie quando houver TLS/proxy.
+
+## 14. Fase 2 — o que existe
+
+Código novo em `src/jutta_ped/painel/`: `crypto`, `go2rtc`, `servicos`, `config_service`,
+`routes_cameras`, `routes_config`; testes em `tests/test_painel_cameras_go2rtc.py`.
+
+- **Câmeras** (`/painel/cameras`, qualquer usuário logado): criar, editar, remover,
+  fabricantes Intelbras, Hikvision, RTSP genérico e stream de teste do go2rtc. A URL RTSP é
+  montada a partir de IP/porta RTSP (padrão 554)/canal/stream principal ou extra, com
+  usuário e senha codificados para URL. Senhas cifradas (Fernet, chave em
+  `runtime/painel_cifra.key`) e **nunca** devolvidas ao navegador; a URL do RTSP genérico
+  aparece mascarada ao editar e é mantida se voltar mascarada.
+- **`Go2rtcSync`:** a cada CRUD (na hora, dentro da requisição), no boot e a cada 15 s,
+  reescreve `runtime/go2rtc/streams.yaml` de forma atômica e aplica na API do go2rtc
+  (`PUT`/`DELETE /api/streams`). Um hash da origem por câmera evita recriar streams
+  inalterados; streams `cam_*` sem câmera no banco são removidos; streams de fora do painel
+  (nome sem `cam_`) nunca são tocados. go2rtc fora do ar → a câmera é salva e fica
+  `pendente` (recupera sozinha). Mensagens de erro nunca incluem a URL/credencial.
+- **Processo do go2rtc** (`Go2rtcProcesso`): se o executável existir em
+  `runtime/go2rtc/` (ou no caminho de Configurações, ou no PATH) o painel o mantém vivo
+  com `-config go2rtc.yaml -config streams.yaml`, reiniciando se cair (intervalo mínimo
+  10 s). Se a API já responde, assume que é externo e não interfere. O `go2rtc.yaml` base
+  é criado só se não existir (API e RTSP em `127.0.0.1`, WebRTC em `:8555`) e nunca é
+  sobrescrito.
+- **IA em segundo plano** (`IaOrquestrador`): alinha as sessões de IA com
+  `camera.ia_pediatria`, sem travar a UI. Só inicia com o stream `ok` no go2rtc e lê o
+  restream (`rtsp://127.0.0.1:8554/cam_<id>`). Partidas escalonadas (3 s), limite de
+  câmeras com IA (Configurações, padrão 4) e retry com backoff (5 s → 5 min) isolado por
+  câmera. Editar/remover câmera reinicia/para a IA dela.
+- **Configurações** (`/painel/configuracoes`, admin): endereços do go2rtc (API, player
+  público, base RTSP), executável, cooldown, retenção, limite de IA, URL pública; mostra
+  o estado da sincronização e do processo.
+- **Ciclo de vida:** as threads (`painel-go2rtc`, `painel-ia`) sobem e param junto com o
+  app (lifespan). `mount_panel(..., background=False)` desliga isso nos testes.
+
+**Pendências / a confirmar com o go2rtc real:** múltiplos `-config` e o formato exato de
+`PUT/DELETE /api/streams` foram implementados conforme a documentação, mas só foram
+exercitados contra um go2rtc simulado — validar assim que o executável estiver disponível.
+O go2rtc escuta só em `127.0.0.1`: para operadores em outras máquinas o vídeo deve passar
+por um proxy autenticado do próprio painel (fase 3), em vez de expor a API do go2rtc.

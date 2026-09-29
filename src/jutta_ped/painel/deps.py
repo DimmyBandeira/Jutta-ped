@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from html import escape as html_escape
 from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -86,3 +88,9 @@ def render(request: Request, nome: str, usuario: Usuario | None = None, status_c
     contexto.setdefault("csrf_token", csrf_da_sessao(request))
     contexto.setdefault("popups_pendentes", [])
     return templates.TemplateResponse(request, nome, contexto, status_code=status_code, headers=headers)
+
+
+def erro_no_form(mensagem: str) -> HTMLResponse:
+    """Mostra o erro no #form-area (alvo dos formularios), mesmo quando o alvo original era outro."""
+    html = f'<div class="badge offline" style="display:block; margin-bottom:.6rem">{html_escape(mensagem)}</div>'
+    return HTMLResponse(html, headers={"HX-Retarget": "#form-area", "HX-Reswap": "innerHTML"})

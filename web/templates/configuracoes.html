@@ -6,6 +6,8 @@
 {% if salvo %}<p class="badge online" style="margin-bottom:1rem">Salvo!</p>{% endif %}
 
 <form class="painel" method="post" action="/painel/configuracoes">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {% if erro %}<div class="badge offline" style="display:block; margin-bottom:.6rem">{{ erro }}</div>{% endif %}
   <div class="cartao">
     <h4>go2rtc</h4>
     <label>API de administração (servidor → go2rtc)</label>

@@ -20,7 +20,7 @@ def painel(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("JUTTA_ADMIN_PASSWORD", SENHA_ADMIN)
     monkeypatch.setenv("JUTTA_ADMIN_LOGIN", "admin")
     app = FastAPI()
-    database = mount_panel(app, db_url=f"sqlite:///{(tmp_path / 'painel.db').as_posix()}", runtime_dir=tmp_path)
+    database = mount_panel(app, db_url=f"sqlite:///{(tmp_path / 'painel.db').as_posix()}", runtime_dir=tmp_path, background=False)
     with TestClient(app, follow_redirects=False) as client:
         yield client, database
     database.dispose()
