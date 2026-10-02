@@ -327,8 +327,34 @@ acompanhada / desacompanhada / Incerto e o overlay chegou com `960x720` e vária
 frame. Uma câmera com IP inalcançável falhou com backoff sem afetar a outra. Ao remover as
 câmeras, os streams `cam_*` sumiram do go2rtc e o YAML do gateway ficou idêntico ao original.
 
-**Ainda não validado:** a renderização no navegador (iframe do player e desenho do canvas);
-só o lado servidor e os contratos foram exercitados. **Segurança:** a API do go2rtc
+**Navegador:** validado na seção 16. **Segurança:** a API do go2rtc
 (`:1984`) devolve as URLs com senha para qualquer cliente que a alcance — restringir por
 firewall/bind ao `127.0.0.1` em produção; um proxy autenticado do painel segue como opção
 futura.
+
+## 16. Testes de navegador (pytest-qt + Qt WebEngine)
+
+`tests/test_painel_navegador_qt.py` sobe o painel real (uvicorn em thread, banco temporário,
+IA falsa, go2rtc simulado no servidor) e o abre num Chromium de verdade (`QWebEngineView`).
+Dependência de teste: `requirements-dev.txt` (`PyQt6-WebEngine`, não entra no release).
+Flags do Chromium/Qt e `QT_QPA_PLATFORM=offscreen` ficam em `tests/conftest.py`
+(precisam existir antes de qualquer `QApplication`). `JUTTA_TEST_SCREENSHOT_DIR=<pasta>`
+grava PNGs das telas para inspeção visual.
+
+Cobertura: login inválido/válido pelo formulário; htmx local carregado e **zero erros de
+JS**; menu por papel; tabela de câmeras com colunas alinhadas; badge da IA atualizando
+sozinho via htmx; overlay desenhado no canvas **respeitando o letterbox** (cor, bordas
+esquerda/direita e áreas fora do vídeo); overlay velho descartado; Pause limpando iframe e
+canvas; iframe do card carregando a página real do go2rtc; e um frame JPEG real do seu
+go2rtc (960x720) decodificado no navegador.
+
+**Limite conhecido:** o Qt WebEngine não traz decodificador H.264 (nem WebRTC nem MSE), e os
+streams de demo são H.264. A reprodução do vídeo em si, portanto, não é verificável ali (o
+teste correspondente se pula, com o motivo); num Chrome/Edge comum isso funciona. O stream
+é provado vivo pelo frame JPEG do go2rtc. Ruído conhecido filtrado: o `EventSource` do SSE
+gera um `[object Event]` do htmx ao descartar a página na navegação.
+
+**Defeitos achados só pelo navegador e corrigidos:** colunas da lista de câmeras trocadas
+(badge de sync sob "Destinos"), coluna "Status" sempre "sem sinal" (placeholder removido) e
+rótulo "admin · admin" no cabeçalho. Também corrigido: câmeras `go2rtc_teste` nunca ficavam
+com sync `ok`, então a IA não subia para elas.

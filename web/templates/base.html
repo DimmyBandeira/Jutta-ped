@@ -23,7 +23,7 @@
     {% endif %}
   </nav>
   <div style="display:flex; align-items:center; gap:.9rem">
-    <span class="aviso" style="margin:0">{{ usuario_logado.login }}{% if eh_admin_logado %} · admin{% endif %}</span>
+    <span class="aviso" style="margin:0">{{ usuario_logado.login }}{% if eh_admin_logado %} <span class="badge neutro">administrador</span>{% endif %}</span>
     <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn" type="submit">Sair</button></form>
   </div>
   {% endif %}

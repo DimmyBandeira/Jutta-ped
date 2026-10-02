@@ -187,7 +187,11 @@ class Go2rtcSync:
     def _reconcile(self) -> ResumoSync:
         resumo = ResumoSync()
         with self._database.session() as db:
-            cameras = [c for c in db.query(Camera).order_by(Camera.id).all() if c.gerenciada_pelo_sync]
+            todas = db.query(Camera).order_by(Camera.id).all()
+            for camera in todas:
+                if not camera.gerenciada_pelo_sync:  # stream de teste ja existe no go2rtc: nada a sincronizar
+                    camera.go2rtc_sync, camera.go2rtc_sync_erro = "ok", None
+            cameras = [c for c in todas if c.gerenciada_pelo_sync]
             desejados: dict[str, tuple[Camera, str]] = {}
             for camera in cameras:
                 try:

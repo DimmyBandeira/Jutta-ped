@@ -496,3 +496,14 @@ def test_falha_ao_gravar_yaml_nao_impede_sincronizar_pela_api(ambiente, monkeypa
     assert "cam_1" in a.go2rtc.streams                 # a API a quente funcionou
     assert _hx(a.client, "DELETE", "/painel/cameras/1").status_code == 200
     assert a.go2rtc.streams == {}
+
+
+def test_camera_de_teste_fica_sincronizada_e_a_ia_sobe(ambiente):
+    a = ambiente
+    _login(a.client)
+    a.go2rtc.streams["demo"] = "ffmpeg:video.mp4"
+    _hx(a.client, "POST", "/painel/cameras", data={"nome": "Teste", "fabricante": "go2rtc_teste", "go2rtc_stream_existente": "demo", "ia_pediatria": "on"})
+    assert _camera(a, "Teste").go2rtc_sync == "ok"
+    a.servicos.ia.reconcile()
+    cfg = a.gerente.ativas["cam_1"]
+    assert cfg.source == "rtsp://127.0.0.1:8554/demo" and cfg.camera_id == "cam_1"

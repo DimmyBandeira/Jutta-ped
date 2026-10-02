@@ -59,7 +59,11 @@ class FakeGerente:
     def cameras(self):
         return [{"camera_id": c, "active": True} for c in self.ativas]
 
+    overlay: dict | None = None  # os testes de navegador definem um overlay especifico
+
     def overlay_latest(self, instance_id):
+        if self.overlay is not None:
+            return self.overlay
         return {"type": "overlay_bboxes", "frame_w": 1920, "frame_h": 1080, "frame_age_ms": 40.0, "objects": [
             {"target_id": 7, "label": "child", "bbox_xyxy": [10, 20, 110, 220], "confidence": 0.9, "state": "CHILD_ALONE"}]}
 

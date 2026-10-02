@@ -1,0 +1,3 @@
+-r requirements-mvp.txt
+# Testes de navegador (tests/test_painel_navegador_qt.py): Chromium via Qt. Pesado; nao entra no release.
+PyQt6-WebEngine==6.11.*
