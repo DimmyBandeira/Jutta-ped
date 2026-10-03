@@ -83,7 +83,8 @@ def test_alerta_suprimido_e_gravado_mas_nao_vira_popup(amb):
     _com_camera(amb)
     amb.eventos.registrar(_payload(amb, frame=2, tipo="popup_suppressed"))
     assert amb.eventos.pendentes() == []
-    assert [e.suprimido for e in amb.eventos.recentes()] == [True]
+    assert [e.suprimido for e in amb.eventos.recentes(incluir_suprimidos=True)] == [True]
+    assert amb.eventos.recentes() == []                    # fora das "recentes" por padrao
 
 
 def test_registro_e_idempotente_por_event_id(amb):
@@ -290,13 +291,41 @@ def test_fragmentos_htmx_nao_trazem_a_pilha_de_popups(amb):
     assert "popup-sess_a_1" not in amb.client.get("/painel/cameras/1/ia-estado").text
 
 
-def test_alertas_recentes_mostram_suprimidos_e_ciencia(amb):
+def test_alertas_recentes_mostram_ciencia_e_nao_deixam_suprimidos_empurrarem_alertas_reais(amb):
     _com_camera(amb)
     amb.eventos.registrar(_payload(amb, frame=1))
-    amb.eventos.registrar(_payload(amb, frame=2, tipo="popup_suppressed"))
+    for frame in range(2, 60):                              # dilúvio de suprimidos depois do alerta real
+        amb.eventos.registrar(_payload(amb, frame=frame, tipo="popup_suppressed"))
     _hx(amb.client, "POST", "/painel/popups/sess_a_1/ack")
     html = amb.client.get("/painel/eventos/recentes").text
-    assert "Recepção" in html and "suprimido" in html and "admin" in html and "Desacompanhada" in html
+    assert "Recepção" in html and "admin" in html and "Desacompanhada" in html
+    assert "suprimido" not in html
+
+
+def test_banco_guarda_no_maximo_um_suprimido_por_camera_a_cada_30s(amb):
+    _com_camera(amb)
+    agora = [datetime(2026, 1, 1, 12, 0, 0)]
+    amb.eventos._relogio = lambda: agora[0]
+    assert amb.eventos.registrar(_payload(amb, frame=1, tipo="popup_suppressed")) is not None
+    for frame in range(2, 40):
+        assert amb.eventos.registrar(_payload(amb, frame=frame, tipo="popup_suppressed")) is None
+    agora[0] += timedelta(seconds=31)
+    assert amb.eventos.registrar(_payload(amb, frame=99, tipo="popup_suppressed")) is not None
+    assert amb.eventos.registrar(_payload(amb, frame=100, tipo="popup_suppressed", camera_id="cam_2")) is not None   # limite e por camera
+    with amb.database.session() as db:
+        assert len(db.scalars(select(EventoPediatria)).all()) == 3
+
+
+def test_stream_sse_termina_quando_o_servico_esta_encerrando(amb, monkeypatch):
+    from src.jutta_ped.painel import encerramento
+
+    _login(amb.client)
+    amb.app.state.painel_sse_intervalo = 60.0               # heartbeat longo: so o sinal de encerramento pode liberar a conexao
+    amb.app.state.painel_sse_max_pings = None
+    monkeypatch.setattr(encerramento, "servidor", SimpleNamespace(should_exit=True))
+    resposta = amb.client.get("/painel/stream")
+    assert resposta.status_code == 200 and resposta.text.strip() == "retry: 3000"
+    assert amb.eventos.total_inscritos == 0                  # a inscricao tambem e liberada
 
 
 # ---------------------------------------------------------------- evidencias

@@ -155,6 +155,24 @@ class IaOrquestrador:
             primeira = False
             self._iniciar(cid, stream, cfg, tentativa)
 
+    def parar_todas(self) -> None:
+        """Encerramento do servico: para TODA sessao de IA (com join das threads) antes de o
+        interpretador finalizar, em vez de deixar threads daemon dentro de codigo nativo de inferencia
+        (OpenVINO/ffmpeg) sendo derrubadas durante a finalizacao do Python."""
+        try:
+            itens = list(self.gerente.cameras())
+        except Exception:  # noqa: BLE001
+            return
+        for item in itens:
+            if not item.get("active"):
+                continue
+            try:
+                self.gerente.disable_camera(str(item["camera_id"]))
+            except Exception:  # noqa: BLE001
+                logger.exception("Falha ao parar a sessao %s no encerramento", item.get("camera_id"))
+        with self._lock:
+            self._estado.clear()
+
     def _status_ativo(self, camera_id: int) -> bool:
         return bool(self.gerente.camera_status(f"{PREFIXO_STREAM}{camera_id}").get("active"))
 
@@ -218,8 +236,10 @@ class PainelServicos:
             laco.acordar()
 
     def parar(self) -> None:
-        for laco in self._lacos:
+        for laco in self._lacos:          # primeiro os lacos: o orquestrador nao pode religar a IA
             laco.parar()
+        if self.ia is not None:
+            self.ia.parar_todas()
         self.go2rtc.parar()
 
 

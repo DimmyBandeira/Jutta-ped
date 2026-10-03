@@ -507,3 +507,16 @@ def test_camera_de_teste_fica_sincronizada_e_a_ia_sobe(ambiente):
     a.servicos.ia.reconcile()
     cfg = a.gerente.ativas["cam_1"]
     assert cfg.source == "rtsp://127.0.0.1:8554/demo" and cfg.camera_id == "cam_1"
+
+
+def test_encerramento_para_todas_as_sessoes_de_ia_antes_de_sair(ambiente):
+    a = ambiente
+    _login(a.client)
+    _hx(a.client, "POST", "/painel/cameras", data=_dados_intelbras(nome="A"))
+    _hx(a.client, "POST", "/painel/cameras", data=_dados_intelbras(nome="B", ip="10.0.0.6"))
+    a.servicos.ia.reconcile()
+    a.gerente.ativas["api_externa"] = SimpleNamespace(camera_id="api_externa")      # sessao aberta pela API, nao pelo painel
+    assert len(a.gerente.ativas) == 3
+    a.servicos.parar()
+    assert a.gerente.ativas == {}
+    assert a.servicos.ia.estado(1)["estado"] == "desligada"

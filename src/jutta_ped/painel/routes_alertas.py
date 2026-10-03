@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 
+from src.jutta_ped.painel import encerramento
 from src.jutta_ped.painel.deps import registrar_auditoria, render, templates, usuario_atual, verifica_csrf, DbDep
 from src.jutta_ped.painel.eventos import formatar_sse
 from src.jutta_ped.painel.models import Usuario
@@ -41,15 +43,17 @@ async def stream(request: Request, usuario: Usuario = Depends(usuario_atual)):
             if ultimo.isdigit():
                 for visao in await asyncio.to_thread(eventos.pendentes, int(ultimo)):
                     yield formatar_sse("popup", _html_do_popup(visao), visao.id_db)
-            enviados = 0
-            while not await request.is_disconnected():
+            enviados, ultimo_ping = 0, time.monotonic()
+            espera = min(intervalo, 1.0)       # acorda ao menos 1x/s: percebe o servico encerrando sem esperar o heartbeat
+            while not await request.is_disconnected() and not encerramento.deve_encerrar():
                 try:
-                    mensagem = await asyncio.wait_for(inscricao.fila.get(), timeout=intervalo)
+                    mensagem = await asyncio.wait_for(inscricao.fila.get(), timeout=espera)
                 except asyncio.TimeoutError:
                     if max_pings is not None and enviados >= max_pings:
                         return
-                    yield ": ping\n\n"
-                    enviados += 1
+                    if time.monotonic() - ultimo_ping >= intervalo:
+                        yield ": ping\n\n"
+                        enviados, ultimo_ping = enviados + 1, time.monotonic()
                     continue
                 if mensagem.nome == "popup":
                     yield formatar_sse("popup", _html_do_popup(mensagem.visao), mensagem.id_evento)

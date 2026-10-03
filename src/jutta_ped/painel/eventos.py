@@ -22,6 +22,7 @@ logger = logging.getLogger("jutta_ped.painel.eventos")
 TIPOS_DE_ALERTA = {"popup_alert", "popup_suppressed"}
 JANELA_POPUPS_PENDENTES = timedelta(hours=12)   # popup sem ciencia mais velho que isso nao volta a aparecer
 MAX_POPUPS_PENDENTES = 10
+INTERVALO_SUPRIMIDOS = timedelta(seconds=30)    # no maximo 1 linha de 'suprimido' por camera neste intervalo
 TIPOS_DE_EVIDENCIA = {"crop", "annotated", "frame"}
 _EXTENSOES_DE_IMAGEM = {".jpg", ".jpeg", ".png"}
 _TAMANHO_FILA = 200
@@ -102,6 +103,7 @@ class PainelEventos:
         self._roots = [Path(r).resolve() for r in evidence_roots]
         self._relogio = relogio
         self._inscricoes: list[_Inscricao] = []
+        self._ultimo_suprimido: dict[int | None, datetime] = {}
         self._lock = threading.Lock()
         self.ouvintes_pos_registro: list[Callable[[int], None]] = []   # ex.: dispatcher de destinos (fase 5)
 
@@ -119,6 +121,13 @@ class PainelEventos:
         suprimido = payload.get("event_type") == "popup_suppressed"
         event_id = f"{payload.get('session_id')}_{payload.get('frame_id')}"
         camera_id = _camera_id_do_runtime(payload.get("camera_id"))
+        if suprimido:
+            agora = self._relogio()
+            with self._lock:
+                ultimo = self._ultimo_suprimido.get(camera_id)
+                if ultimo is not None and agora - ultimo < INTERVALO_SUPRIMIDOS:
+                    return None
+                self._ultimo_suprimido[camera_id] = agora
         filho = payload.get("selected_child") or {}
         confianca = payload.get("child_confidence")
         if confianca is None:
@@ -187,9 +196,13 @@ class PainelEventos:
             visoes = [(e.id, para_visao(e)) for e in reversed(eventos)]
         return [SimpleNamespace(id_db=i, **vars(v)) for i, v in visoes]
 
-    def recentes(self, limite: int = 15) -> list[SimpleNamespace]:
+    def recentes(self, limite: int = 15, incluir_suprimidos: bool = False) -> list[SimpleNamespace]:
+        """Ultimos alertas. Suprimidos (cooldown) ficam de fora por padrao: nao devem empurrar alertas reais."""
+        consulta = select(EventoPediatria).order_by(EventoPediatria.id.desc()).limit(limite)
+        if not incluir_suprimidos:
+            consulta = consulta.where(EventoPediatria.suprimido.is_(False))
         with self._database.session() as db:
-            eventos = db.scalars(select(EventoPediatria).order_by(EventoPediatria.id.desc()).limit(limite)).unique().all()
+            eventos = db.scalars(consulta).unique().all()
             return [para_visao(e) for e in eventos]
 
     def caminho_evidencia(self, event_id: str, tipo: str) -> Path | None:

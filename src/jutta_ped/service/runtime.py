@@ -275,6 +275,11 @@ class SessionStartConfig:
     # So usado para fontes 'file': "stop" (padrao, comportamento anterior --
     # EOF encerra a sessao) ou "loop" (reinicia do frame 0 ao chegar no fim).
     video_end_policy: str = "stop"
+    # Durante um episodio ja alertado o latch suprime cada frame; gravar evidencia (3 imagens) e evento a
+    # cada frame enchia o disco (192 eventos / ~97 MB num unico episodio). Frames suprimidos continuam
+    # contados em `suppressed_count`, mas evidencia/evento saem no maximo 1x por este intervalo
+    # (por estado+track). 0 = comportamento antigo (um evento por frame).
+    suppressed_evidence_interval_seconds: float = 10.0
 
 
 @dataclass
@@ -532,6 +537,10 @@ class PediatriaHeadlessSession:
             child = select_alert_child(state, resolved)
             if child is not None:
                 allowed = self.latch.claim(self.camera_id, state.stable_state, child.track_id)
+                if not allowed and not self._suprimido_deve_registrar(state.stable_state, child.track_id):
+                    with self.lock:
+                        self.state.suppressed_count += 1
+                    return
                 event_type = "popup_alert" if allowed else "popup_suppressed"
                 suppression_reason = None if allowed else "active_episode_or_camera_track_cooldown"
                 paths, errors = self._save_event_evidence(event_type, clean_frame, state, child, resolved, person_detections, allowed, suppression_reason)
@@ -542,6 +551,19 @@ class PediatriaHeadlessSession:
                         self.state.popup_count += 1
                     else:
                         self.state.suppressed_count += 1
+
+    def _suprimido_deve_registrar(self, stable_state: str, track_id: int) -> bool:
+        """Limita evidencia/evento de frames suprimidos a 1 por intervalo (ver SessionStartConfig)."""
+        intervalo = float(getattr(self.config, "suppressed_evidence_interval_seconds", 0.0))
+        if intervalo <= 0:
+            return True
+        registrados = self.__dict__.setdefault("_suppressed_logged", {})
+        chave, agora = (stable_state, int(track_id)), time.monotonic()
+        ultimo = registrados.get(chave)
+        if ultimo is not None and agora - ultimo < intervalo:
+            return False
+        registrados[chave] = agora
+        return True
 
     def _save_event_evidence(self, event_type: str, frame: Any, state: Any, child: PediatricDetection | None, detections: list[PediatricDetection], person_detections: list[PediatricDetection], popup_emitido: bool, suppression_reason: str | None) -> tuple[dict[str, str], list[str]]:
         timestamp = datetime.now()

@@ -402,3 +402,20 @@ em um operador remove o popup no outro (Edge, dois contextos); recarregar não d
 persistida não volta; console sem erros.
 
 **Pendente (fase 5):** relatório completo com filtros, dispatcher de destinos e a coluna "Envio".
+
+## 18. Testes operacionais (ponta a ponta, sistema real)
+
+`tools/teste_operacional_painel.py` sobe o serviço real (modelos de IA reais, go2rtc real, várias câmeras, SSE, falhas induzidas,
+reinício e encerramento) e gera `docs/testes_operacionais/AAAA-MM-DD_HHMM.md`. Seguro com o go2rtc do gateway: só cria/remove
+streams `cam_*` e confere ao final que o YAML ficou idêntico. Uso: `.venv\Scripts\python.exe tools\teste_operacional_painel.py [--duracao 150]`.
+
+Cobre: boot, IA em segundo plano, fps/CPU/RAM por câmera, duas câmeras em paralelo, isolamento de câmera com falha, alerta real da IA por
+SSE (dois operadores, evidência JPEG, ciência), limite de evidências de suprimidos, auto-cura do go2rtc, edição (nova sessão de IA),
+encerramento gracioso, reinício (sessão e câmeras preservadas) e limpeza.
+
+Última execução: **15/15 passos aprovados** (`docs/testes_operacionais/2026-10-03_1352.md`, com a análise e as pendências). A primeira
+execução (`..._1338.md`) está guardada como referência do estado antes das correções (1 falha: alertas recentes cobertos por suprimidos).
+
+Mudanças que vieram dos achados: evidência de suprimidos limitada (`SessionStartConfig.suppressed_evidence_interval_seconds`, 10 s),
+suprimidos fora das recentes e no máximo 1 por câmera/30 s no banco, SSE que termina com o serviço (`painel/encerramento.py` +
+`tools/run_pediatria_service_api.py` usando `uvicorn.Server`), parada de todas as sessões de IA no encerramento.
