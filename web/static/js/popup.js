@@ -22,6 +22,13 @@
 
   const stack = document.getElementById("popup-stack");
   if (!stack) return;
+  // "Fechar todos" aparece quando ha 2+ popups e fica logo acima da pilha
+  function atualizarFecharTodos() {
+    const botao = document.getElementById("popup-fechar-todos");
+    if (!botao) return;
+    const n = stack.querySelectorAll(".popup").length;
+    botao.hidden = n < 2;
+  }
   // Tabela "Alertas recentes" (so existe no Monitoramento): atualiza quando um popup entra ou sai.
   let pendente = null;
   function atualizarAlertas() {
@@ -32,6 +39,7 @@
     }, 250);
   }
   new MutationObserver((muts) => {
+    atualizarFecharTodos();
     for (const m of muts) {
       for (const n of m.addedNodes) {
         if (n.nodeType === 1 && n.classList.contains("popup")) { if (!n.dataset.silencioso) beep(); atualizarAlertas(); }
@@ -60,4 +68,42 @@ document.body.addEventListener("htmx:sseMessage", (e) => {
   if (!msg || msg.type !== "ack") return;
   const el = document.getElementById(`popup-${(msg.data || "").trim()}`);
   if (el) el.remove();
+});
+
+
+// ---- Dispensar popup (botao X) -----------------------------------------------------------------
+// Dispensar NAO da ciencia: so esconde o popup neste navegador (ate fechar a aba). O alerta continua
+// pendente em "Alertas recentes", de onde o operador pode dar ciencia depois.
+const CHAVE_DISPENSADOS = "jutta_popups_dispensados";
+function lerDispensados() {
+  try { return JSON.parse(sessionStorage.getItem(CHAVE_DISPENSADOS) || "[]"); } catch (e) { return []; }
+}
+function gravarDispensado(id) {
+  try {
+    const lista = lerDispensados();
+    if (!lista.includes(id)) { lista.push(id); sessionStorage.setItem(CHAVE_DISPENSADOS, JSON.stringify(lista.slice(-200))); }
+  } catch (e) { /* sessionStorage indisponivel: o popup apenas volta ao recarregar */ }
+}
+function dispensarPopup(botao) {
+  const popup = botao.closest(".popup");
+  if (!popup) return;
+  gravarDispensado(popup.dataset.eventId);
+  popup.remove();
+}
+function dispensarTodos() {
+  document.querySelectorAll("#popup-stack .popup").forEach((p) => { gravarDispensado(p.dataset.eventId); p.remove(); });
+}
+window.dispensarPopup = dispensarPopup;
+window.dispensarTodos = dispensarTodos;
+
+// Pendentes renderizados junto com a pagina que o operador ja dispensou nesta aba: escondem de novo
+document.querySelectorAll("#popup-stack .popup").forEach((p) => {
+  if (lerDispensados().includes(p.dataset.eventId)) p.remove();
+});
+// ...e o mesmo para os que chegam pelo SSE (replay apos reconexao)
+document.body.addEventListener("htmx:sseBeforeMessage", (e) => {
+  const msg = e.detail;
+  if (!msg || msg.type !== "popup") return;
+  const m = /id="popup-([^"]+)"/.exec(msg.data || "");
+  if (m && lerDispensados().includes(m[1])) e.preventDefault();
 });

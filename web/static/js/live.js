@@ -2,7 +2,7 @@
 // Overlay: polling de /painel/cameras/{id}/overlay (contrato plugin/schemas/overlay.schema.json,
 // com frame_w/frame_h). So as cameras em "Play" consultam; sem WebSocket nesta fase.
 const _tocando = new Map();          // cameraId -> timer do overlay
-const _INTERVALO_OVERLAY_MS = 300;
+const _INTERVALO_OVERLAY_MS = 200;
 const _MAX_IDADE_OVERLAY_MS = 2000;  // overlay mais velho que isso nao e desenhado
 const _COR = { child: "#f87171", adult: "#22d3ee", uncertain: "#facc15" };
 const _ROTULO = { child: "criança", adult: "adulto", uncertain: "incerto" };
@@ -44,7 +44,9 @@ async function atualizarOverlay(id) {
   try {
     const r = await fetch(`/painel/cameras/${id}/overlay`, { headers: { Accept: "application/json" }, credentials: "same-origin" });
     if (!r.ok) return limpar(id);
-    desenhar(id, await r.json());
+    const msg = await r.json();
+    if (!_tocando.has(id)) return;      // pausou enquanto a resposta vinha: nao redesenha sobre o player parado
+    desenhar(id, msg);
   } catch (e) {
     limpar(id);
   }

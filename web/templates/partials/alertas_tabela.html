@@ -8,7 +8,9 @@
       <td>{{ a.camera_nome }}</td>
       <td>{{ 'Desacompanhada' if a.estado == 'CHILD_ALONE' else 'Separada do adulto' }}{% if a.suprimido %} <span class="badge neutro">suprimido</span>{% endif %}</td>
       <td>{{ (a.confianca * 100)|round|int ~ '%' if a.confianca is not none else '—' }}</td>
-      <td>{% if a.reconhecido_em %}{{ a.reconhecido_por }} · {{ a.reconhecido_em.strftime('%H:%M:%S') }}{% elif a.suprimido %}—{% else %}<span class="badge aviso-amarelo">pendente</span>{% endif %}</td>
+      <td>{% if a.reconhecido_em %}{{ a.reconhecido_por }} · {{ a.reconhecido_em.strftime('%H:%M:%S') }}{% elif a.suprimido %}—{% else %}<span class="badge aviso-amarelo">pendente</span>
+          <button class="btn" type="button" hx-post="/painel/popups/{{ a.event_id }}/ack" hx-swap="none"
+                  hx-on::after-request="if (event.detail.successful) htmx.trigger(document.body, 'alertas-mudaram')">Ciente</button>{% endif %}</td>
       <td>{% for e in a.entregas %}<span class="badge {{ 'online' if e.sucesso else 'offline' }}" title="{{ e.detalhe }}">{{ e.destino_nome }}</span> {% else %}<span class="aviso">—</span>{% endfor %}</td>
       <td>{% if a.crop_url %}<a href="{{ a.crop_url }}" target="_blank" rel="noopener">recorte</a>{% endif %}
           {% if a.annotated_url %} · <a href="{{ a.annotated_url }}" target="_blank" rel="noopener">imagem</a>{% endif %}</td>

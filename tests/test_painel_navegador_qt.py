@@ -329,12 +329,14 @@ def test_popup_aparece_ao_vivo_com_imagem_e_some_ao_dar_ciencia(nav, servidor):
     assert nav.js("getComputedStyle(document.getElementById('popup-stack')).position") == "fixed"
     nav.qtbot.wait(500)                                                              # fim da animacao de entrada
     nav.captura("popup_ao_vivo")
-    # o popup nao cobre o cabecalho (botao Sair continua clicavel)
-    cobre = nav.js(
-        "(() => { const b = document.querySelector('header form button').getBoundingClientRect();"
-        " const r = document.getElementById('popup-stack').getBoundingClientRect(); return r.top < b.bottom; })()"
+    # o popup nao cobre nenhum controle da pagina: cabecalho (Sair) nem botoes "Tocar/Pausar todas" nem o Play do card
+    sobrepoe = nav.js(
+        "(() => { const p = document.getElementById('popup-stack').getBoundingClientRect();"
+        " const alvos = ['header form button', 'button[onclick=\"liveTodas(true)\"]', 'button[onclick=\"liveTodas(false)\"]', '#btn-play-1'];"
+        " return alvos.filter(s => { const e = document.querySelector(s); if (!e) return false; const r = e.getBoundingClientRect();"
+        "   return !(r.right < p.left || r.left > p.right || r.bottom < p.top || r.top > p.bottom); }); })()"
     )
-    assert cobre is False
+    assert sobrepoe == [], f"popup sobre: {sobrepoe}"
 
     nav.js("document.querySelector('#popup-sess_nav_201 button.primary').click(); true")
     nav.esperar("!document.getElementById('popup-sess_nav_201')", timeout=10000)
@@ -357,3 +359,57 @@ def test_popup_repetido_pelo_sse_e_descartado_e_ack_remove_o_popup(nav, servidor
     assert inedito is False                                  # popup inedito segue o fluxo normal
     nav.js("document.body.dispatchEvent(new CustomEvent('htmx:sseMessage', {bubbles: true, detail: {type: 'ack', data: 'xyz'}})); true")
     assert nav.js("document.getElementById('popup-xyz') === null") is True
+
+
+def test_fechar_popup_nao_da_ciencia_e_alerta_segue_pendente_na_tabela(nav, servidor):
+    import threading
+
+    from sqlalchemy import select
+
+    from src.jutta_ped.painel.models import EventoPediatria
+
+    nav.entrar(servidor.url)
+    _esperar_sse(servidor, nav)
+    eventos = servidor.app.state.painel.eventos
+    threading.Thread(target=eventos.on_runtime_event, args=(payload_alerta(servidor.evid, 401),)).start()
+    nav.esperar("!!document.getElementById('popup-sess_nav_401')", timeout=10000)
+
+    nav.js("document.querySelector('#popup-sess_nav_401 .popup-fechar').click(); true")        # botao X
+    assert nav.js("document.getElementById('popup-sess_nav_401') === null") is True
+    with servidor.database.session() as db:                                                      # fechar != ciencia
+        assert db.scalar(select(EventoPediatria).where(EventoPediatria.event_id == "sess_nav_401")).reconhecido_em is None
+
+    nav.esperar("document.getElementById('lista-eventos-recentes').innerText.includes('pendente')", timeout=8000)
+    nav.abrir(f"{servidor.url}/painel/monitoramento")                                          # recarregar: continua dispensado
+    nav.qtbot.wait(1500)
+    assert nav.js("document.getElementById('popup-sess_nav_401') === null") is True
+
+    # ciencia dada depois, direto pela tabela
+    nav.esperar("!!document.querySelector('#lista-eventos-recentes button')", timeout=8000)
+    nav.js("document.querySelector('#lista-eventos-recentes button').click(); true")
+    nav.esperar("!document.getElementById('lista-eventos-recentes').innerText.includes('pendente')", timeout=8000)
+    with servidor.database.session() as db:
+        ev = db.scalar(select(EventoPediatria).where(EventoPediatria.event_id == "sess_nav_401"))
+        assert ev.reconhecido_por == "admin"
+    assert nav.erros_js() == []
+
+
+def test_com_varios_popups_aparece_fechar_todos(nav, servidor):
+    import threading
+
+    nav.entrar(servidor.url)
+    _esperar_sse(servidor, nav)
+    # com 0-1 popup o botao esta escondido DE VERDADE (o atributo hidden nao pode perder para o display do .btn)
+    assert nav.js("getComputedStyle(document.getElementById('popup-fechar-todos')).display") == "none"
+    eventos = servidor.app.state.painel.eventos
+    for frame in (411, 412, 413):
+        threading.Thread(target=eventos.on_runtime_event, args=(payload_alerta(servidor.evid, frame),)).start()
+    nav.esperar("document.querySelectorAll('#popup-stack .popup').length === 3", timeout=10000)
+    nav.esperar("document.getElementById('popup-fechar-todos').hidden === false", timeout=5000)
+    nav.captura("popups_varios")
+    nav.js("document.getElementById('popup-fechar-todos').click(); true")
+    assert nav.js("document.querySelectorAll('#popup-stack .popup').length") == 0
+    assert nav.js("document.getElementById('popup-fechar-todos').hidden") is True
+    # marca como lidos para nao vazar pendentes para outros testes
+    for frame in (411, 412, 413):
+        eventos.reconhecer(f"sess_nav_{frame}", "teste")

@@ -3,14 +3,18 @@
 <div class="popup" id="popup-{{ ev.event_id }}" data-event-id="{{ ev.event_id }}" role="alert">
   <div class="cab">
     <span>{{ 'Criança desacompanhada' if ev.estado == 'CHILD_ALONE' else 'Criança separada do adulto' }}</span>
-    <span class="aviso" style="margin:0">{{ ev.quando_fmt }}</span>
+    <span class="popup-direita">
+      <span class="aviso" style="margin:0">{{ ev.quando_fmt }}</span>
+      {# Dispensar != dar ciencia: so esconde neste navegador; o alerta segue pendente em "Alertas recentes" #}
+      <button type="button" class="popup-fechar" aria-label="Fechar" title="Fechar (o alerta continua pendente em Alertas recentes)"
+              onclick="dispensarPopup(this)">&times;</button>
+    </span>
   </div>
   <div class="corpo">
     {% if ev.crop_url %}<img src="{{ ev.crop_url }}" alt="Recorte da criança">{% endif %}
     <div>
       <div><strong style="color:var(--text)">{{ ev.camera_nome }}</strong></div>
       {% if ev.confianca is not none %}<div>Confiança: {{ (ev.confianca * 100)|round|int }}%</div>{% endif %}
-      <div>Motivo: {{ ev.motivo or '—' }}</div>
     </div>
   </div>
   <div class="acoes">

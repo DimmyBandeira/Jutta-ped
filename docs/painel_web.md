@@ -307,7 +307,7 @@ Código: `src/jutta_ped/painel/routes_monitor.py`, `web/static/js/live.js`, temp
   painel por outro host, o painel troca o host pelo do navegador (mantém porta e esquema).
 - **Overlay:** `GET /painel/cameras/{id}/overlay` devolve o último overlay da IA (contrato
   `plugin/schemas/overlay.schema.json`, agora com `frame_w`/`frame_h`). `live.js` consulta a
-  cada 300 ms só as câmeras em Play, mapeia as coordenadas para a área real do vídeo
+  cada 200 ms só as câmeras em Play, mapeia as coordenadas para a área real do vídeo
   (letterbox) e descarta overlay com mais de 2 s.
 - **Estado da IA por card** (`/painel/cameras/{id}/ia-estado`, atualizado a cada 3 s):
   Analisando, Criança acompanhada/desacompanhada, Incerto, Iniciando, Aguardando stream,
@@ -419,3 +419,36 @@ execução (`..._1338.md`) está guardada como referência do estado antes das c
 Mudanças que vieram dos achados: evidência de suprimidos limitada (`SessionStartConfig.suppressed_evidence_interval_seconds`, 10 s),
 suprimidos fora das recentes e no máximo 1 por câmera/30 s no banco, SSE que termina com o serviço (`painel/encerramento.py` +
 `tools/run_pediatria_service_api.py` usando `uvicorn.Server`), parada de todas as sessões de IA no encerramento.
+
+## 19. Uso real: popup e caixas do overlay
+
+Dois problemas relatados na primeira utilização.
+
+**Popup difícil de usar.** Ficava sobre os botões "Tocar/Pausar todas" e não tinha como ser dispensado.
+- Botão **×** em cada popup. Dispensar **não é dar ciência**: esconde o popup neste navegador (`sessionStorage`, até fechar a aba);
+  o alerta continua *pendente* em "Alertas recentes", agora com botão **Ciente** na própria linha.
+- **"Fechar todos os alertas"** aparece quando há 2 ou mais popups.
+- A pilha foi para o **canto inferior direito** (não cobre cabeçalho, botões nem o Play do card) e o popup ficou compacto
+  (miniatura 72 px; o código interno do motivo deixou de ser exibido).
+- Achados pelos testes de navegador: o atributo `hidden` perdia para o `display` da classe `.btn` (o botão "fechar todos" ficava
+  sempre visível e interceptava cliques); agora há `[hidden] { display:none !important }`.
+
+**Caixas "perdidas": a IA analisava imagens antigas.** Medido com `tools/medir_defasagem_overlay.py` (correspondência de imagem entre os
+frames da IA, o `<video>` do Edge e o arquivo de origem, tudo no mesmo instante):
+
+| Situação | Atraso da IA em relação ao stream ao vivo |
+|---|---|
+| 1 câmera (antes) | 0,8 s |
+| **3 câmeras (antes)** | **~12 s**, estável: o atraso acumulado na subida nunca era recuperado |
+| 3 câmeras (depois) | 0,85–0,93 s (0,25 s atrás da imagem exibida no Edge, que tem ~0,55 s de atraso próprio) |
+
+Causa: o runtime lia o stream em sequência (`read()` → inferir → `read()`), sem descartar frames. **Correção:** `LatestFrameCapture`
+(`runtime.py`) — uma thread lê continuamente e a IA sempre pega o frame mais recente (descartando os atrasados, contados em
+`dropped`; exposto em `telemetry.capture.frames_dropped`). Vale só para fontes de rede e dispositivo; arquivos de vídeo continuam
+processando todos os frames. Se nenhum frame novo chega em 10 s, `read()` falha e a reconexão existente assume. Também se definiu
+`OPENCV_FFMPEG_CAPTURE_OPTIONS` (TCP, `nobuffer`, `low_delay`); medir variações das opções do FFmpeg mostrou o mesmo piso (0,64 s)
+em todas, ou seja, a latência restante não vem do buffer do leitor. O overlay passou a ser consultado a cada 200 ms, e uma resposta
+que chega depois do Pause não redesenha mais as caixas.
+
+**Efeito colateral a conhecer:** se a IA for mais lenta que o stream, ela agora pula frames (antes processava todos, mas cada vez mais
+atrasada). As regras de companhia/identidade operam por frame processado; vale validar com cenas rápidas.

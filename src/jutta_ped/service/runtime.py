@@ -3,6 +3,7 @@
 import csv
 import json
 import logging
+import os
 import threading
 import time
 import uuid
@@ -110,8 +111,94 @@ def resolve_device(force_cpu: bool, requested: str = "auto") -> tuple[str, str]:
         return "cpu", f"torch_indisponivel_{type(exc).__name__}"
 
 
+# Latencia baixa para RTSP/HTTP no FFmpeg do OpenCV: TCP (robusto atras do go2rtc), sem buffer de entrada e sem
+# reordenacao. So vale para o proximo VideoCapture; o usuario pode sobrescrever definindo a variavel antes.
+os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay")
+
+
+class LatestFrameCapture:
+    """Envolve um `cv2.VideoCapture` ao vivo (RTSP/HTTP/USB) e entrega sempre o frame MAIS RECENTE.
+
+    Problema que resolve: ler em sequencia (`read()` -> inferir -> `read()`...) faz os frames se acumularem
+    no buffer sempre que a inferencia e mais lenta que o stream (ou apos a subida das sessoes). O atraso
+    acumulado nunca se recupera: medido no teste operacional, a IA analisava imagens ~12 s antigas e as
+    caixas do overlay ficavam descasadas do video. Aqui uma thread le continuamente e a IA pega o ultimo
+    frame, descartando os que ficaram para tras (`dropped`). Fontes de arquivo NAO usam isto (analise
+    offline precisa de todos os frames).
+
+    Mesma interface usada pelo runtime: `isOpened`, `read`, `release` e (por delegacao) `get`/`set`.
+    `read()` devolve `(False, None)` se o leitor falhou ou se nenhum frame novo chegou em `read_timeout`
+    segundos, o que aciona a logica de reconexao ja existente.
+    """
+
+    def __init__(self, capture: Any, *, read_timeout: float = 10.0) -> None:
+        self._cap = capture
+        self._read_timeout = read_timeout
+        self._cond = threading.Condition()
+        self._frame: Any = None
+        self._seq = 0
+        self._entregue = 0
+        self._falhou = False
+        self._parar = False
+        self.dropped = 0
+        self.lidos = 0
+        self._thread: threading.Thread | None = None
+        if capture.isOpened():
+            self._thread = threading.Thread(target=self._leitor, name="captura-ao-vivo", daemon=True)
+            self._thread.start()
+
+    def _leitor(self) -> None:
+        try:
+            while not self._parar:
+                ok, frame = self._cap.read()
+                with self._cond:
+                    if not ok or frame is None:
+                        self._falhou = True
+                        self._cond.notify_all()
+                        return
+                    if self._seq > self._entregue:
+                        self.dropped += 1            # o anterior nunca foi consumido: foi sobrescrito
+                    self._frame, self._seq = frame, self._seq + 1
+                    self.lidos += 1
+                    self._cond.notify_all()
+        finally:
+            if self._parar:                          # release() pediu parada enquanto este thread estava no read()
+                try:
+                    self._cap.release()
+                except Exception:  # noqa: BLE001
+                    pass
+
+    def isOpened(self) -> bool:  # noqa: N802 -- mesma assinatura do cv2
+        return bool(self._cap.isOpened())
+
+    def read(self) -> tuple[bool, Any]:
+        with self._cond:
+            self._cond.wait_for(lambda: self._seq > self._entregue or self._falhou or self._parar, timeout=self._read_timeout)
+            if self._seq > self._entregue:
+                self._entregue = self._seq
+                return True, self._frame
+            return False, None
+
+    def release(self) -> None:
+        with self._cond:
+            self._parar = True
+            self._cond.notify_all()
+        thread = self._thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=3.0)
+        if thread is None or not thread.is_alive():
+            self._cap.release()
+        # senao: o leitor ainda esta preso num read() de rede; ele mesmo libera a captura ao voltar (ver _leitor)
+
+    def __getattr__(self, nome: str) -> Any:
+        return getattr(self._cap, nome)
+
+
 def open_capture_source(source: str | int) -> Any:
-    return cv2.VideoCapture(source)
+    capture = cv2.VideoCapture(source)
+    if classify_source_kind(source) in ("network", "device"):
+        return LatestFrameCapture(capture)
+    return capture
 
 
 def normalize_bbox(frame: Any, bbox_xyxy: tuple[float, float, float, float] | list[float] | None) -> tuple[int, int, int, int] | None:
@@ -707,7 +794,9 @@ class PediatriaHeadlessSession:
         with self.lock:
             frames_processed = self.state.frames_processed
         crop_pipeline = getattr(self.service, "crop_pipeline", None)
+        captura = getattr(self, "capture", None)
         return {
+            "capture": {"frames_dropped": getattr(captura, "dropped", 0), "frames_read": getattr(captura, "lidos", None)} if isinstance(captura, LatestFrameCapture) else None,
             "resources": self.telemetry.resources_snapshot(),
             "performance": self.telemetry.performance_snapshot(
                 frames_processed=frames_processed,
