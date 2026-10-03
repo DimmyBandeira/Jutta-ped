@@ -348,13 +348,18 @@ esquerda/direita e áreas fora do vídeo); overlay velho descartado; Pause limpa
 canvas; iframe do card carregando a página real do go2rtc; e um frame JPEG real do seu
 go2rtc (960x720) decodificado no navegador.
 
-**Limite conhecido:** o Qt WebEngine não traz decodificador H.264 (nem WebRTC nem MSE), e os
-streams de demo são H.264. A reprodução do vídeo em si, portanto, não é verificável ali (o
-teste correspondente se pula, com o motivo); num Chrome/Edge comum isso funciona. O stream
-é provado vivo pelo frame JPEG do go2rtc. Ruído conhecido filtrado: o `EventSource` do SSE
-gera um `[object Event]` do htmx ao descartar a página na navegação.
+**Limite do Qt WebEngine e como foi coberto:** ele não traz decodificador H.264 (nem WebRTC nem
+MSE) e os streams de demo são H.264; por isso o teste de reprodução ali se pula (com o motivo).
+A reprodução é provada em `tests/test_painel_navegador_edge.py`, que usa **Edge/Chrome reais**
+via Playwright (`channel=msedge|chrome`, sem baixar navegador; `requirements-dev.txt`):
+o vídeo H.264 toca no card (960x720, relógio do vídeo avançando), Pause para o player, e a
+bbox do overlay coincide com a área real do `<video>` do go2rtc (`object-fit: contain`) com
+diferença ≤ 1 px. Ruído conhecido filtrado no Qt: o `EventSource` do SSE gera um
+`[object Event]` do htmx ao descartar a página na navegação.
 
 **Defeitos achados só pelo navegador e corrigidos:** colunas da lista de câmeras trocadas
 (badge de sync sob "Destinos"), coluna "Status" sempre "sem sinal" (placeholder removido) e
-rótulo "admin · admin" no cabeçalho. Também corrigido: câmeras `go2rtc_teste` nunca ficavam
+rótulo "admin · admin" no cabeçalho e, vistos no Edge real, o badge da IA e a barra de Play
+cobrindo o rótulo e os controles nativos do player (agora nome, badge e Play ficam num rodapé
+fora do vídeo). Também corrigido: câmeras `go2rtc_teste` nunca ficavam
 com sync `ok`, então a IA não subia para elas.

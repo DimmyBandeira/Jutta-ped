@@ -1,18 +1,23 @@
-{# Card de camera do monitoramento. Contexto: c (camera do banco), c.player_url (go2rtc),
-   c.ia_estado (ANALISANDO/CRIANCA_DESACOMPANHADA/.../STOPPED). #}
-<div class="cam-card" id="cam-{{ c.id }}" data-camera-id="{{ c.id }}" data-player-url="{{ c.player_url or '' }}">
-  <iframe id="player-{{ c.id }}" src="about:blank" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
-  <canvas id="overlay-{{ c.id }}"></canvas>
-  {% if not c.player_url %}<div class="vazio-video">Aguardando o stream ficar disponível no go2rtc…</div>{% endif %}
-  <div class="topo">
-    <span>{{ c.nome }}</span>
-    <span id="ia-estado-{{ c.id }}"
-          hx-get="/painel/cameras/{{ c.id }}/ia-estado" hx-trigger="load, every 3s" hx-swap="innerHTML">
-      {% include "partials/ia_estado.html" %}
-    </span>
+{# Card de camera do monitoramento: area de video (iframe go2rtc + canvas do overlay) e rodape
+   com nome, estado da IA e Play -- fora do video, para nao cobrir os controles do player.
+   Contexto: c (ver routes_monitor.visao_camera). #}
+<div class="cam-bloco">
+  <div class="cam-card" id="cam-{{ c.id }}" data-camera-id="{{ c.id }}" data-player-url="{{ c.player_url or '' }}">
+    <iframe id="player-{{ c.id }}" src="about:blank" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
+    <canvas id="overlay-{{ c.id }}"></canvas>
+    {% if not c.player_url %}<div class="vazio-video">Aguardando o stream ficar disponível no go2rtc…</div>{% endif %}
   </div>
-  <div class="base">
-    <span class="aviso" style="margin:0">{{ c.sync_texto }}</span>
-    <button class="btn primary" type="button" id="btn-play-{{ c.id }}" onclick="livePlay({{ c.id }})">Play</button>
+  <div class="cam-rodape">
+    <div class="cam-rodape-info">
+      <strong class="cam-nome">{{ c.nome }}</strong>
+      <span id="ia-estado-{{ c.id }}"
+            hx-get="/painel/cameras/{{ c.id }}/ia-estado" hx-trigger="load, every 3s" hx-swap="innerHTML">
+        {% include "partials/ia_estado.html" %}
+      </span>
+    </div>
+    <div class="cam-rodape-acoes">
+      <span class="aviso" style="margin:0">{{ c.sync_texto }}</span>
+      <button class="btn primary" type="button" id="btn-play-{{ c.id }}" onclick="livePlay({{ c.id }})">Play</button>
+    </div>
   </div>
 </div>

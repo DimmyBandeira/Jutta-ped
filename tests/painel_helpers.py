@@ -89,3 +89,15 @@ def _dados_intelbras(**extra):
             "stream_tipo": "principal", "usuario": "admin", "senha": "p@ss#1", "ia_pediatria": "on"}
     base.update(extra)
     return base
+
+
+GO2RTC_REAL = "http://127.0.0.1:1984"
+STREAM_REAL = "entrada_social_vis"
+
+
+def porta_livre() -> int:
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]

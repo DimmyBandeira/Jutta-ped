@@ -65,14 +65,13 @@ main.larga { max-width:none; }
             border-radius:10px; overflow:hidden; }
 .cam-card iframe { width:100%; height:100%; border:0; background:#000; }
 .cam-card canvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
-.cam-card .topo, .cam-card .base { position:absolute; left:0; right:0; display:flex; align-items:center;
-            justify-content:space-between; gap:.5rem; padding:.45rem .7rem; font-size:.8rem; }
-.cam-card .topo { top:0; background:linear-gradient(to bottom, rgba(0,0,0,.75), transparent); }
-.cam-card .base { bottom:0; background:linear-gradient(to top, rgba(0,0,0,.75), transparent);
-            opacity:0; transition:opacity .15s; }
-.cam-card:hover .base { opacity:1; }
 .cam-card .vazio-video { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
             color:var(--muted); font-size:.85rem; }
+.cam-bloco { border:1px solid var(--border); border-radius:10px; overflow:hidden; background:var(--panel); }
+.cam-bloco .cam-card { border:0; border-radius:0; }
+.cam-rodape { display:flex; align-items:center; justify-content:space-between; gap:.6rem; flex-wrap:wrap; padding:.5rem .7rem; }
+.cam-rodape-info, .cam-rodape-acoes { display:flex; align-items:center; gap:.6rem; min-width:0; }
+.cam-nome { font-size:.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .badge.alerta { background:rgba(248,113,113,.2); color:var(--erro); }
 .badge.aviso-amarelo { background:rgba(250,204,21,.15); color:#facc15; }
 .painel-eventos { margin-top:1.2rem; }

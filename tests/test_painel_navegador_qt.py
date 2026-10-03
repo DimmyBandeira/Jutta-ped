@@ -13,72 +13,27 @@ Flags do Chromium/Qt: ver tests/conftest.py.
 from __future__ import annotations
 
 import os
-import socket
-import threading
 import time
 import urllib.request
 from pathlib import Path
-from types import SimpleNamespace
 
-import httpx
 import pytest
 
 pytest.importorskip("PyQt6.QtWebEngineWidgets", reason="PyQt6-WebEngine nao instalado")
 pytest.importorskip("pytestqt")
 
-import uvicorn  # noqa: E402
-from fastapi import FastAPI  # noqa: E402
 from PyQt6.QtCore import QUrl  # noqa: E402
 from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile  # noqa: E402
 from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: E402
 
-from painel_helpers import FakeGerente, FakeGo2rtc, SENHA_ADMIN  # noqa: E402
-from src.jutta_ped.painel.models import Camera, Fabricante  # noqa: E402
-from src.jutta_ped.painel.panel import mount_panel  # noqa: E402
+from painel_helpers import GO2RTC_REAL, SENHA_ADMIN, STREAM_REAL  # noqa: E402
 
-GO2RTC_REAL = "http://127.0.0.1:1984"
-STREAM_REAL = "entrada_social_vis"
 _ERRO = QWebEnginePage.JavaScriptConsoleMessageLevel.ErrorMessageLevel
 
 
-def _porta_livre() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
 @pytest.fixture(scope="module")
-def servidor(tmp_path_factory):
-    tmp = tmp_path_factory.mktemp("painel_navegador")
-    mp = pytest.MonkeyPatch()
-    mp.setenv("JUTTA_ADMIN_PASSWORD", SENHA_ADMIN)
-    gerente = FakeGerente()
-    app = FastAPI()
-    database = mount_panel(
-        app,
-        db_url=f"sqlite:///{(tmp / 'painel.db').as_posix()}",
-        runtime_dir=tmp,
-        manager=gerente,
-        config_factory=lambda **kw: SimpleNamespace(**kw),
-        background=False,
-        go2rtc_transport=httpx.MockTransport(FakeGo2rtc()),  # o painel nao toca no go2rtc real
-    )
-    app.state.painel.ia.dormir = lambda _s: None
-    with database.session() as db:
-        db.add(Camera(nome="Demo", fabricante=Fabricante.go2rtc_teste, go2rtc_stream_name=STREAM_REAL, ia_pediatria=True, go2rtc_sync="ok"))
-    porta = _porta_livre()
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=porta, log_level="warning", timeout_graceful_shutdown=2))
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-    limite = time.monotonic() + 20
-    while not server.started and time.monotonic() < limite:
-        time.sleep(0.05)
-    assert server.started, "uvicorn nao subiu"
-    yield SimpleNamespace(url=f"http://127.0.0.1:{porta}", gerente=gerente, app=app)
-    server.should_exit = True
-    thread.join(timeout=10)
-    database.dispose()
-    mp.undo()
+def servidor(painel_servidor):
+    return painel_servidor
 
 
 class _Pagina(QWebEnginePage):
@@ -205,7 +160,8 @@ def test_badge_da_ia_atualiza_sozinho_via_htmx(nav, servidor):
 
     servidor.gerente.operacional = "CRIANCA_DESACOMPANHADA"
     nav.esperar("document.getElementById('ia-estado-1').innerText.includes('Criança desacompanhada')", timeout=10000)
-    assert nav.js("document.querySelector('#ia-estado-1 .badge').className").endswith("alerta")
+    # classList (nao className): durante o swap o htmx acrescenta a classe transitoria `htmx-added`
+    assert nav.js("document.querySelector('#ia-estado-1 .badge').classList.contains('alerta')")
     assert nav.erros_js() == []
 
 
