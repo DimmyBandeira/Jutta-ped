@@ -199,6 +199,7 @@ class PainelServicos:
     intervalo_go2rtc: float = 15.0
     intervalo_ia: float = 10.0
     cifra: Any = None
+    eventos: Any = None
     _lacos: list[LacoPeriodico] = field(default_factory=list)
 
     def _ciclo_go2rtc(self) -> None:

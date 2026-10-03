@@ -16,10 +16,11 @@ from starlette.middleware.sessions import SessionMiddleware
 
 import httpx
 
-from src.jutta_ped.painel import routes_auth, routes_cameras, routes_config, routes_monitor, routes_usuarios
+from src.jutta_ped.painel import routes_alertas, routes_auth, routes_cameras, routes_config, routes_monitor, routes_usuarios
 from src.jutta_ped.painel.config_service import ler_config
 from src.jutta_ped.painel.crypto import Cifra
 from src.jutta_ped.painel.db import Database
+from src.jutta_ped.painel.eventos import PainelEventos
 from src.jutta_ped.painel.go2rtc import Go2rtcClient, Go2rtcProcesso, Go2rtcSync
 from src.jutta_ped.painel.servicos import GerenteIa, IaOrquestrador, PainelServicos, config_loader_para
 from src.jutta_ped.painel.deps import NaoAutenticado, SemPermissao, WEB_DIR, exige_admin, render, usuario_atual
@@ -76,6 +77,7 @@ def montar_servicos(
     config_factory: Callable[..., Any] | None,
     go2rtc_transport: httpx.BaseTransport | None,
     popen: Callable[..., Any] | None,
+    evidence_roots: list[Path] | None,
 ) -> PainelServicos:
     cifra = Cifra.carregar_ou_criar(runtime_dir / "painel_cifra.key")
     config_loader = config_loader_para(database)
@@ -97,6 +99,10 @@ def montar_servicos(
         ia = IaOrquestrador(database=database, gerente=manager, config_loader=config_loader, config_factory=config_factory)
     servicos = PainelServicos(database=database, sync=sync, go2rtc=processo, ia=ia, runtime_dir=runtime_dir)
     servicos.cifra = cifra
+    servicos.eventos = PainelEventos(database, evidence_roots or [ROOT / "pediatria_results"])
+    registrar = getattr(manager, "add_event_listener", None)
+    if callable(registrar):
+        registrar(servicos.eventos.on_runtime_event)
     return servicos
 
 
@@ -110,12 +116,14 @@ def mount_panel(
     background: bool = True,
     go2rtc_transport: httpx.BaseTransport | None = None,
     popen: Callable[..., Any] | None = None,
+    evidence_roots: list[Path] | None = None,
 ) -> Database:
     """Acopla o painel web (login, sessao, RBAC, cameras, go2rtc) a um app FastAPI existente.
 
     `manager`/`config_factory`: gerente de sessoes de IA (PediatriaSessionManager e
     SessionStartConfig); sem eles o painel funciona mas nao liga a IA.
     `background=False` nao inicia as threads de go2rtc/IA (testes).
+    `evidence_roots`: pastas de onde o painel pode servir imagens de evidencia (padrao: pediatria_results/).
     """
     runtime_dir = runtime_dir or DEFAULT_RUNTIME_DIR
     db_url = db_url or os.environ.get("JUTTA_PANEL_DB") or f"sqlite:///{(runtime_dir / 'painel.db').as_posix()}"
@@ -123,7 +131,7 @@ def mount_panel(
     database.create_all()
     garantir_admin_inicial(database)
 
-    servicos = montar_servicos(database, runtime_dir, manager=manager, config_factory=config_factory, go2rtc_transport=go2rtc_transport, popen=popen)
+    servicos = montar_servicos(database, runtime_dir, manager=manager, config_factory=config_factory, go2rtc_transport=go2rtc_transport, popen=popen, evidence_roots=evidence_roots)
     app.state.painel = servicos
     app.state.painel_db = database
     app.state.painel_limitador = LimitadorLogin()
@@ -170,5 +178,6 @@ def mount_panel(
     app.include_router(routes_cameras.router)
     app.include_router(routes_config.router)
     app.include_router(routes_monitor.router)
+    app.include_router(routes_alertas.router)
     app.include_router(_placeholders)
     return database

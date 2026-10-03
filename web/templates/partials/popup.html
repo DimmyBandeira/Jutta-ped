@@ -15,8 +15,10 @@
   </div>
   <div class="acoes">
     {% if ev.annotated_url %}<a class="btn" href="{{ ev.annotated_url }}" target="_blank" rel="noopener">Ver frame</a>{% endif %}
+    {# hx-swap="none": o popup tambem pode ser removido pelo `event: ack` do SSE (que chega antes da
+       resposta do POST); trocar um alvo ja removido faz o htmx falhar. Remove-se so apos sucesso. #}
     <button class="btn primary"
-            hx-post="/painel/popups/{{ ev.event_id }}/ack"
-            hx-target="#popup-{{ ev.event_id }}" hx-swap="outerHTML">Ciente</button>
+            hx-post="/painel/popups/{{ ev.event_id }}/ack" hx-swap="none"
+            hx-on::after-request="if (event.detail.successful) this.closest('.popup')?.remove()">Ciente</button>
   </div>
 </div>

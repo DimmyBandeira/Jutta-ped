@@ -2,10 +2,12 @@
 
 import csv
 import json
+import logging
 import threading
 import time
 import uuid
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
@@ -650,6 +652,14 @@ class PediatriaHeadlessSession:
             self.state.last_event_at = payload.get("timestamp") or datetime.now().isoformat(timespec="milliseconds")
         self._record_summary(payload)
         self._append_events_jsonl_line(payload)
+        # Canal "ao vivo" (o painel web assina aqui): chamado na thread de inferencia, entao o
+        # ouvinte deve ser rapido e nunca pode derrubar a analise.
+        listener = getattr(self, "event_listener", None)
+        if listener is not None:
+            try:
+                listener(payload)
+            except Exception:  # noqa: BLE001
+                logging.getLogger(__name__).exception("Ouvinte de eventos falhou")
 
     def recent_events(self, limit: int = 50) -> list[dict[str, Any]]:
         """Cauda do events.jsonl da sessao, parseada linha a linha.
@@ -905,9 +915,22 @@ class PediatriaSessionManager:
         self._sessions: dict[str, PediatriaHeadlessSession] = {}
         self._camera_sessions: dict[str, str] = {}
         self._lock = threading.Lock()
+        self._event_listeners: list[Callable[[dict[str, Any]], None]] = []
+
+    def add_event_listener(self, listener: Callable[[dict[str, Any]], None]) -> None:
+        """Recebe todo evento gravado por qualquer sessao (popup_alert, popup_suppressed, frame_diagnostic...)."""
+        self._event_listeners.append(listener)
+
+    def _dispatch_event(self, payload: dict[str, Any]) -> None:
+        for listener in list(self._event_listeners):
+            try:
+                listener(payload)
+            except Exception:  # noqa: BLE001 -- um ouvinte ruim nao pode afetar os outros nem a analise
+                logging.getLogger(__name__).exception("Ouvinte de eventos falhou")
 
     def start_session(self, config: SessionStartConfig) -> dict[str, Any]:
         session = PediatriaHeadlessSession(config)
+        session.event_listener = self._dispatch_event
         session.start()
         with self._lock:
             self._sessions[session.session_id] = session

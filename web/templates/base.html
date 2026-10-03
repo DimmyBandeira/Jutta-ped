@@ -36,6 +36,7 @@
 <!-- Popups de alerta: o servidor empurra <div class="popup"> via SSE (event: popup). -->
 <div id="popup-stack" aria-live="assertive"
      sse-connect="/painel/stream" sse-swap="popup" hx-swap="beforeend">
+  <span hidden sse-swap="ack" hx-swap="none"></span>   {# ciencia dada por outro operador (tratada em popup.js) #}
   {# popups pendentes (nao reconhecidos) reaparecem ao recarregar/navegar #}
   {% for ev in popups_pendentes or [] %}{% include "partials/popup.html" %}{% endfor %}
 </div>

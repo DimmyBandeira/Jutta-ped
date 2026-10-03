@@ -26,7 +26,7 @@ from PyQt6.QtCore import QUrl  # noqa: E402
 from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile  # noqa: E402
 from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: E402
 
-from painel_helpers import GO2RTC_REAL, SENHA_ADMIN, STREAM_REAL  # noqa: E402
+from painel_helpers import GO2RTC_REAL, SENHA_ADMIN, STREAM_REAL, payload_alerta  # noqa: E402
 
 _ERRO = QWebEnginePage.JavaScriptConsoleMessageLevel.ErrorMessageLevel
 
@@ -302,3 +302,58 @@ def test_go2rtc_entrega_frame_real_do_stream_e_o_navegador_o_decodifica(nav, ser
     info = nav.esperar("window.__img.ok !== null && window.__img", timeout=30000)
     print(f"\n[frame] {len(corpo)} bytes JPEG; decodificado no navegador: {info}")
     assert info["ok"] is True and info["w"] > 100 and info["h"] > 100
+
+
+# ---------------------------------------------------------------- popups ao vivo (SSE)
+
+
+def _esperar_sse(servidor, nav, minimo: int = 1) -> None:
+    eventos = servidor.app.state.painel.eventos
+    limite = time.monotonic() + 15
+    while eventos.total_inscritos < minimo and time.monotonic() < limite:
+        nav.qtbot.wait(100)
+    assert eventos.total_inscritos >= minimo
+
+
+def test_popup_aparece_ao_vivo_com_imagem_e_some_ao_dar_ciencia(nav, servidor):
+    import threading
+
+    nav.entrar(servidor.url)
+    _esperar_sse(servidor, nav)
+    eventos = servidor.app.state.painel.eventos
+    threading.Thread(target=eventos.on_runtime_event, args=(payload_alerta(servidor.evid, 201),)).start()   # thread de inferencia
+    nav.esperar("!!document.getElementById('popup-sess_nav_201')", timeout=10000)
+    texto = nav.js("document.getElementById('popup-sess_nav_201').innerText")
+    assert "Criança desacompanhada" in texto and "Demo" in texto and "93%" in texto
+    nav.esperar("(() => {const i = document.querySelector('#popup-sess_nav_201 img'); return !!i && i.complete && i.naturalWidth > 0;})()", timeout=10000)
+    assert nav.js("getComputedStyle(document.getElementById('popup-stack')).position") == "fixed"
+    nav.qtbot.wait(500)                                                              # fim da animacao de entrada
+    nav.captura("popup_ao_vivo")
+    # o popup nao cobre o cabecalho (botao Sair continua clicavel)
+    cobre = nav.js(
+        "(() => { const b = document.querySelector('header form button').getBoundingClientRect();"
+        " const r = document.getElementById('popup-stack').getBoundingClientRect(); return r.top < b.bottom; })()"
+    )
+    assert cobre is False
+
+    nav.js("document.querySelector('#popup-sess_nav_201 button.primary').click(); true")
+    nav.esperar("!document.getElementById('popup-sess_nav_201')", timeout=10000)
+    assert nav.erros_js() == []
+
+
+def test_popup_repetido_pelo_sse_e_descartado_e_ack_remove_o_popup(nav, servidor):
+    nav.entrar(servidor.url)
+    nav.js("document.getElementById('popup-stack').insertAdjacentHTML('beforeend', '<div class=popup id=popup-xyz>teste</div>'); true")
+    # mensagem SSE repetida (replay): o handler cancela o evento antes de o htmx inseri-la
+    repetido = nav.js(
+        "(() => { const e = new CustomEvent('htmx:sseBeforeMessage', {cancelable: true, bubbles: true, detail: {type: 'popup', data: '<div class=popup id=\"popup-xyz\">x</div>'}});"
+        " document.body.dispatchEvent(e); return e.defaultPrevented; })()"
+    )
+    assert repetido is True
+    inedito = nav.js(
+        "(() => { const e = new CustomEvent('htmx:sseBeforeMessage', {cancelable: true, bubbles: true, detail: {type: 'popup', data: '<div class=popup id=\"popup-outro\">x</div>'}});"
+        " document.body.dispatchEvent(e); return e.defaultPrevented; })()"
+    )
+    assert inedito is False                                  # popup inedito segue o fluxo normal
+    nav.js("document.body.dispatchEvent(new CustomEvent('htmx:sseMessage', {bubbles: true, detail: {type: 'ack', data: 'xyz'}})); true")
+    assert nav.js("document.getElementById('popup-xyz') === null") is True

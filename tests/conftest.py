@@ -58,6 +58,7 @@ def painel_servidor(tmp_path_factory):
         config_factory=lambda **kw: SimpleNamespace(**kw),
         background=False,
         go2rtc_transport=httpx.MockTransport(FakeGo2rtc()),
+        evidence_roots=[tmp / "evid"],
     )
     app.state.painel.ia.dormir = lambda _s: None
     with database.session() as db:
@@ -70,7 +71,7 @@ def painel_servidor(tmp_path_factory):
     while not server.started and time.monotonic() < limite:
         time.sleep(0.05)
     assert server.started, "uvicorn nao subiu"
-    yield SimpleNamespace(url=f"http://127.0.0.1:{porta}", gerente=gerente, app=app, database=database)
+    yield SimpleNamespace(url=f"http://127.0.0.1:{porta}", gerente=gerente, app=app, database=database, evid=tmp / "evid")
     server.should_exit = True
     thread.join(timeout=10)
     database.dispose()

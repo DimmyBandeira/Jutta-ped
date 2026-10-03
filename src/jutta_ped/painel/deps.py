@@ -82,11 +82,22 @@ def registrar_auditoria(db: Session, usuario_login: str | None, acao: str, alvo:
     db.add(Auditoria(usuario_login=usuario_login, acao=acao, alvo=alvo))
 
 
+def _popups_pendentes(request: Request, nome: str, usuario: Usuario | None) -> list:
+    """Popups sem ciencia, para reaparecerem ao navegar/recarregar. So em paginas completas:
+    fragmentos HTMX (`partials/`, `_*.html`) nao tem a pilha de popups e rodam a cada poucos segundos."""
+    if usuario is None or nome.startswith("partials/") or Path(nome).name.startswith("_"):
+        return []
+    servicos = getattr(request.app.state, "painel", None)
+    eventos = getattr(servicos, "eventos", None)
+    return eventos.pendentes() if eventos is not None else []
+
+
 def render(request: Request, nome: str, usuario: Usuario | None = None, status_code: int = 200, headers: dict[str, str] | None = None, **contexto: Any):
     contexto.setdefault("usuario_logado", usuario)
     contexto.setdefault("eh_admin_logado", bool(usuario and usuario.eh_admin))
     contexto.setdefault("csrf_token", csrf_da_sessao(request))
-    contexto.setdefault("popups_pendentes", [])
+    if "popups_pendentes" not in contexto:
+        contexto["popups_pendentes"] = _popups_pendentes(request, nome, usuario)
     return templates.TemplateResponse(request, nome, contexto, status_code=status_code, headers=headers)
 
 

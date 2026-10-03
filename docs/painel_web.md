@@ -187,7 +187,7 @@ Todos compilam com Jinja2 (verificado). Variáveis globais em `base.html`:
 1. Banco, login, sessão/CSRF, papéis e CRUD de usuários — **concluída** (§13).
 2. CRUD de câmeras + `Go2rtcSync` + launcher do go2rtc (§11: partida assíncrona/escalonada e limite de câmeras com IA) — **concluída** (§14).
 3. Monitoramento: player go2rtc e overlay (polling) + estado da IA por câmera — **concluída** (§15).
-4. `EventBus`, SSE, popups, ciência persistida.
+4. `EventBus`, SSE, popups, ciência persistida — **concluída** (§17).
 5. Relatório e dispatcher de destinos (GPS Indoor, WifiPTT, Webhook).
 6. Build Nuitka (incluir `web/templates` e `web/static`), limpeza de `web/_referencia/`.
 
@@ -363,3 +363,42 @@ rótulo "admin · admin" no cabeçalho e, vistos no Edge real, o badge da IA e a
 cobrindo o rótulo e os controles nativos do player (agora nome, badge e Play ficam num rodapé
 fora do vídeo). Também corrigido: câmeras `go2rtc_teste` nunca ficavam
 com sync `ok`, então a IA não subia para elas.
+
+## 17. Fase 4 — alertas em tempo real
+
+Código: `src/jutta_ped/painel/eventos.py` (`PainelEventos`), `routes_alertas.py`; modelos
+`EventoPediatria` e `Entrega` (esta última preenchida pelo dispatcher, fase 5); `popup.js`;
+testes em `tests/test_painel_alertas.py` e nos dois módulos de navegador.
+
+**Caminho do alerta:** thread de inferência → `PediatriaHeadlessSession._append_event` →
+ouvinte da sessão → `PediatriaSessionManager._dispatch_event` → `PainelEventos.on_runtime_event`
+→ (1) grava `eventos_pediatria` (idempotente por `event_id = <session_id>_<frame_id>`) e
+(2) publica nas filas dos navegadores conectados (`loop.call_soon_threadsafe`). Ouvinte que falha
+é registrado e isolado: nunca derruba a análise nem os demais ouvintes. `popup_suppressed`
+(cooldown) é gravado para o relatório, mas **não** vira popup.
+
+- **SSE `/painel/stream`:** `event: popup` (HTML pronto de `partials/popup.html`, com `id:` = id
+  do banco) e `event: ack` (event_id reconhecido por outro operador). Heartbeat a cada 15 s.
+  Reconexão com `Last-Event-ID` reenvia os popups sem ciência perdidos; a inscrição é feita
+  antes do replay para nada se perder no intervalo.
+- **Ciência:** `POST /painel/popups/{event_id}/ack` (qualquer usuário logado) grava quem e quando
+  (só o primeiro ack vale), audita e avisa os demais navegadores, que removem o popup. O botão usa
+  `hx-swap="none"` e remove o popup só após sucesso: o `ack` do SSE chega antes da resposta do POST
+  e trocar um alvo já removido quebrava o htmx (achado pelos testes de navegador).
+- **Pendentes:** popup sem ciência (e com menos de 12 h) reaparece ao recarregar/navegar em
+  qualquer página completa, no máximo 10; `popup.js` descarta duplicatas (pendente da página +
+  SSE) pelo `id` do elemento. Fragmentos HTMX não consultam o banco.
+- **Evidências:** `GET /painel/evidence/{event_id}/{crop|annotated|frame}`. O caminho vem do
+  **banco**, nunca do cliente, e só é servido se estiver dentro das pastas configuradas
+  (`evidence_roots`; no serviço, `pediatria_results/service_api`), for imagem e existir; senão 404.
+- **Alertas recentes** (Monitoramento): últimos 15, incluindo suprimidos; atualiza na hora quando um
+  popup entra/sai (e a cada 10 s). Histórico sobrevive à remoção da câmera (guarda o nome).
+- **Som:** `popup.js` toca dois bipes quando chega popup novo (o navegador só libera áudio após o
+  primeiro clique/tecla na sessão).
+- **UI:** a pilha de popups fica abaixo do cabeçalho (não cobre "Sair").
+
+**Validado em navegador:** popup aparece ao vivo com a imagem de evidência decodificada; ciência
+em um operador remove o popup no outro (Edge, dois contextos); recarregar não duplica; ciência
+persistida não volta; console sem erros.
+
+**Pendente (fase 5):** relatório completo com filtros, dispatcher de destinos e a coluna "Envio".

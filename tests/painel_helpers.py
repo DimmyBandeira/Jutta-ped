@@ -101,3 +101,30 @@ def porta_livre() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
+
+
+def gravar_foto(pasta, nome: str, cor=(60, 60, 220), lado: int = 120) -> str:
+    """JPEG de verdade (quadrado de uma cor) para testar o carregamento de evidencias no navegador."""
+    from pathlib import Path
+
+    import cv2
+    import numpy as np
+
+    pasta = Path(pasta)
+    pasta.mkdir(parents=True, exist_ok=True)
+    imagem = np.zeros((lado, lado, 3), dtype=np.uint8)
+    imagem[:] = cor
+    caminho = pasta / nome
+    assert cv2.imwrite(str(caminho), imagem)
+    return str(caminho)
+
+
+def payload_alerta(evid, frame: int, sessao: str = "sess_nav", camera_id: str = "cam_1", tipo: str = "popup_alert") -> dict:
+    return {
+        "event_type": tipo, "session_id": sessao, "camera_id": camera_id, "frame_id": frame, "stable_state": "CHILD_ALONE",
+        "reason": "child_without_adult", "child_confidence": 0.93,
+        "evidence_paths": {
+            "crop": gravar_foto(evid / sessao, f"{frame}_crop.jpg"),
+            "annotated": gravar_foto(evid / sessao, f"{frame}_bbox.jpg", (40, 160, 40), 200),
+        },
+    }

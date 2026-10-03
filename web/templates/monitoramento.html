@@ -18,7 +18,7 @@
 
 <section class="painel-eventos">
   <h3>Alertas recentes</h3>
-  <div id="lista-eventos-recentes" hx-get="/painel/eventos/recentes" hx-trigger="load, every 10s" hx-swap="innerHTML"></div>
+  <div id="lista-eventos-recentes" hx-get="/painel/eventos/recentes" hx-trigger="load, every 10s, alertas-mudaram" hx-swap="innerHTML"></div>
 </section>
 
 {% endblock %}

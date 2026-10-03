@@ -77,8 +77,8 @@ main.larga { max-width:none; }
 .painel-eventos { margin-top:1.2rem; }
 
 /* ---- Popups de alerta (SSE) ---- */
-#popup-stack { position:fixed; top:1rem; right:1rem; z-index:100; display:flex; flex-direction:column;
-               gap:.7rem; width:min(380px, calc(100vw - 2rem)); max-height:calc(100vh - 2rem); overflow-y:auto; }
+#popup-stack { position:fixed; top:4.75rem; right:1rem; z-index:100; display:flex; flex-direction:column;
+               gap:.7rem; width:min(380px, calc(100vw - 2rem)); max-height:calc(100vh - 6rem); overflow-y:auto; }
 .popup { background:var(--panel); border:1px solid var(--erro); border-left-width:5px; border-radius:10px;
          box-shadow:0 10px 30px rgba(0,0,0,.5); overflow:hidden; animation:popup-in .2s ease-out; }
 .popup .cab { display:flex; justify-content:space-between; align-items:center; padding:.6rem .8rem;
@@ -87,3 +87,7 @@ main.larga { max-width:none; }
 .popup .corpo img { width:110px; height:110px; object-fit:cover; border-radius:6px; background:#000; }
 .popup .acoes { display:flex; gap:.5rem; justify-content:flex-end; padding:.5rem .8rem .7rem; }
 @keyframes popup-in { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:none; } }
+
+/* Links dentro de tabelas (ex.: evidencias do alerta) */
+td a { color:#7dd3fc; text-decoration:none; }
+td a:hover { text-decoration:underline; }

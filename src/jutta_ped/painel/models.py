@@ -3,7 +3,7 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.jutta_ped.painel.db import Base
@@ -112,3 +112,38 @@ class Camera(Base):
     @property
     def status(self):  # placeholder: status online real chega com o live view (fase 3)
         return None
+
+
+class EventoPediatria(Base):
+    """Alerta gerado pela IA (popup_alert) ou suprimido pelo cooldown (popup_suppressed)."""
+
+    __tablename__ = "eventos_pediatria"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    camera_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)  # sem FK: o historico sobrevive a camera removida
+    camera_nome: Mapped[str] = mapped_column(String(80))
+    session_id: Mapped[str] = mapped_column(String(64))
+    estado: Mapped[str] = mapped_column(String(32))  # CHILD_ALONE | CHILD_SEPARATED
+    confianca: Mapped[float | None] = mapped_column(Float, nullable=True)
+    motivo: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    suprimido: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    evidencias_json: Mapped[str] = mapped_column(Text, default="{}")
+    criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
+    reconhecido_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    reconhecido_por: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    entregas: Mapped[list["Entrega"]] = relationship(cascade="all, delete-orphan", lazy="selectin", order_by="Entrega.id")
+
+
+class Entrega(Base):
+    """Tentativa de envio de um alerta a um destino (preenchida pelo dispatcher, fase 5)."""
+
+    __tablename__ = "entregas"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    evento_id: Mapped[int] = mapped_column(ForeignKey("eventos_pediatria.id", ondelete="CASCADE"), index=True)
+    destino_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    destino_nome: Mapped[str] = mapped_column(String(80))
+    sucesso: Mapped[bool] = mapped_column(Boolean, default=False)
+    detalhe: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)

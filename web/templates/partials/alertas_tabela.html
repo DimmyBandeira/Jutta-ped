@@ -11,7 +11,7 @@
       <td>{% if a.reconhecido_em %}{{ a.reconhecido_por }} · {{ a.reconhecido_em.strftime('%H:%M:%S') }}{% elif a.suprimido %}—{% else %}<span class="badge aviso-amarelo">pendente</span>{% endif %}</td>
       <td>{% for e in a.entregas %}<span class="badge {{ 'online' if e.sucesso else 'offline' }}" title="{{ e.detalhe }}">{{ e.destino_nome }}</span> {% else %}<span class="aviso">—</span>{% endfor %}</td>
       <td>{% if a.crop_url %}<a href="{{ a.crop_url }}" target="_blank" rel="noopener">recorte</a>{% endif %}
-          {% if a.annotated_url %} · <a href="{{ a.annotated_url }}" target="_blank" rel="noopener">frame</a>{% endif %}</td>
+          {% if a.annotated_url %} · <a href="{{ a.annotated_url }}" target="_blank" rel="noopener">imagem</a>{% endif %}</td>
     </tr>
     {% else %}
     <tr><td colspan="7" class="vazio">Nenhum alerta no período.</td></tr>

@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 from types import SimpleNamespace
 from typing import Any
 from urllib.parse import quote, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -18,7 +16,6 @@ from src.jutta_ped.painel.models import Camera, Fabricante, Usuario
 router = APIRouter(prefix="/painel", dependencies=[Depends(verifica_csrf)])
 
 _LOOPBACK = {"127.0.0.1", "localhost", "::1"}
-SSE_INTERVALO_PADRAO = 15.0
 
 _OVERLAY_VAZIO: dict[str, Any] = {
     "type": "overlay_bboxes",
@@ -118,30 +115,3 @@ def overlay(camera_id: int, request: Request, usuario: Usuario = Depends(usuario
         return gerente.overlay_latest(sessao)
     except KeyError:
         return _OVERLAY_VAZIO
-
-
-@router.get("/eventos/recentes")
-def eventos_recentes(request: Request, usuario: Usuario = Depends(usuario_atual)):
-    # Alimentado pelo banco de alertas na fase 4.
-    return render(request, "partials/eventos_recentes.html", usuario, alertas=[])
-
-
-@router.get("/stream")
-async def stream(request: Request, usuario: Usuario = Depends(usuario_atual)):
-    """SSE do painel. Nesta fase so mantem a conexao viva (heartbeat); os popups de alerta
-    passam a sair por aqui na fase 4."""
-    intervalo = float(getattr(request.app.state, "painel_sse_intervalo", SSE_INTERVALO_PADRAO))
-
-    max_pings = getattr(request.app.state, "painel_sse_max_pings", None)  # so os testes limitam (TestClient nao le stream infinito)
-
-    async def gerar():
-        yield "retry: 3000\n\n"
-        enviados = 0
-        while not await request.is_disconnected():
-            if max_pings is not None and enviados >= max_pings:
-                return
-            await asyncio.sleep(intervalo)
-            yield ": ping\n\n"
-            enviados += 1
-
-    return StreamingResponse(gerar(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

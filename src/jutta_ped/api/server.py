@@ -8,6 +8,6 @@ usuario administrador como efeito colateral.
 
 from src.jutta_ped.api.app import app, manager
 from src.jutta_ped.painel.panel import mount_panel
-from src.jutta_ped.service.runtime import SessionStartConfig
+from src.jutta_ped.service.runtime import DEFAULT_REPORT_DIR, SessionStartConfig
 
-mount_panel(app, manager=manager, config_factory=SessionStartConfig)
+mount_panel(app, manager=manager, config_factory=SessionStartConfig, evidence_roots=[DEFAULT_REPORT_DIR])
