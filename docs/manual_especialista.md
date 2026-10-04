@@ -519,17 +519,26 @@ Regras (obrigações do instalador):
 2. **Extração isolada:** em `staging/<token>/`, sem sobrescrever, só dentro do destino, com os limites da
    seção 12.6 reaplicados sobre os bytes realmente escritos. Depois uma troca atômica de pasta para
    `pacotes/` e gravação atômica do registro (arquivo temporário + `replace`, com cópia `.bak`).
-3. **Versão imutável:** mesmo `id`+`versão` com os mesmos pesos é idempotente; com pesos diferentes é recusado
-   (`versao_imutavel`). Para mudar pesos, publique outra versão.
-4. **Recuperação após queda** (`recuperar`, também executada antes de cada instalação): descarta `staging`;
-   instalação interrompida depois de mover mas antes de registrar é **concluída** se o conteúdo ainda confere,
-   ou vai para `quarentena/`; diretório fora do registro vai para `quarentena/` (nunca é apagado); versão
+3. **Versão imutável:** mesmo `id`+`versão` com o mesmo **conteúdo** é idempotente; com conteúdo diferente
+   (pesos, manifesto ou qualquer arquivo) é recusado (`versao_imutavel`). Para mudar algo, publique outra
+   versão.
+4. **Identidade persistida:** o registro (esquema 2) guarda por versão `hashes` dos pesos, `conteudo_sha256`
+   (hash canônico `jutta-dir-v1` de **todos** os arquivos, inclusive `manifest.json`) e `manifesto_sha256`.
+   Ativar, reverter e recuperar conferem a pasta instalada contra essa identidade; registro sem identidade
+   (esquema 1) não é confiável e a versão é tratada como corrompida (reinstale).
+5. **Recuperação após queda** (`recuperar`, também executada antes de cada instalação): descarta `staging`;
+   instalação interrompida depois de mover mas antes de registrar é **concluída** se o conteúdo ainda confere
+   (inclusive a identidade gravada no marcador), ou vai para `quarentena/`; o marcador só é removido
+   **depois** de o registro ser persistido, então uma falha na gravação deixa a recuperação repetível; diretório fora do registro vai para `quarentena/` (nunca é apagado); versão
    registrada sem arquivos fica `ausente`, e se era a ativa volta à última válida do histórico; registro
    ilegível usa o `.bak` e, se ambos falharem, é reconstruído a partir de `pacotes/` (sem versão ativa).
-5. **Ativação** confere a integridade na hora (hashes dos pesos); falhou: a versão fica `corrompida` e a ativa
-   não muda. O histórico guarda as últimas 10 ativações. **Reverter** pula versões anteriores corrompidas e
+6. **Ativação** confere a integridade na hora (validador + hashes + identidade); falhou: a versão fica
+   `corrompida` e a ativa não muda. O histórico guarda as últimas 10 ativações. **Reverter** pula versões anteriores corrompidas e
    mantém a versão atual instalada, inativa.
-6. **Exclusão mútua** por `.lock` (pid); lock de processo morto é ignorado.
+7. **Exclusão mútua** por bloqueio do sistema operacional sobre `.lock` (`LockFileEx` no Windows, `flock` no
+   Linux): o dono é quem mantém o descritor aberto e o SO libera sozinho se o processo morrer. Não existe
+   "lock obsoleto" para detectar nem apagar (a verificação-e-remoção anterior deixava dois donos possíveis); o
+   arquivo nunca é removido.
 
 Códigos de saída da CLI de instalação: `0` ok · `1` uso/E-S · `10` reprovado pelo validador · `11` conflito de
 versão/destino · `12` operação em andamento · `13` falha de E/S · `14` integridade · `15` estado (versão

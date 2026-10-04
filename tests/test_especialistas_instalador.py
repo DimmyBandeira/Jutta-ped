@@ -266,22 +266,95 @@ def test_registro_e_gravado_de_forma_atomica(tmp_path: Path, inst: Instalador, m
     assert not (inst.pacotes / "br.teste.bebe" / "1.1.0").exists()                # e sem sobra no disco
 
 
-# --- exclusao mutua -----------------------------------------------------------------------------------------
+# --- exclusao mutua (bloqueio do SO) --------------------------------------------------------------------------
 
-def test_bloqueio_impede_operacao_concorrente_e_lock_obsoleto_e_ignorado(tmp_path: Path, inst: Instalador) -> None:
-    inst.arq_lock.write_text(json.dumps({"pid": os.getpid(), "desde": "x"}), encoding="utf-8")   # dono vivo (este processo)
-    with pytest.raises(ErroInstalacao) as e:
-        inst.instalar(pacote_zip(tmp_path, "a.zip"))
-    assert e.value.codigo == COD_BLOQUEIO
-    inst.arq_lock.write_text(json.dumps({"pid": 2**30, "desde": "x"}), encoding="utf-8")        # dono morto
+def test_operacao_concorrente_e_bloqueada_enquanto_o_dono_mantem_o_lock(tmp_path: Path, inst: Instalador) -> None:
+    outro = Instalador(inst.raiz)                       # outro "processo" logico sobre a mesma raiz
+    with outro._bloqueio():
+        with pytest.raises(ErroInstalacao) as e:
+            inst.instalar(pacote_zip(tmp_path, "a.zip"))
+        assert e.value.codigo == COD_BLOQUEIO
+        with pytest.raises(ErroInstalacao):
+            inst.recuperar()
+    assert inst.instalar(pacote_zip(tmp_path, "a.zip")).ja_instalado is False      # liberado pelo dono
+
+
+def test_arquivo_de_lock_antigo_nao_bloqueia_e_nao_ha_lock_obsoleto_para_disputar(tmp_path: Path, inst: Instalador) -> None:
+    inst.arq_lock.write_text(json.dumps({"pid": 2**30, "desde": "x"}), encoding="utf-8")    # resto de um dono morto
     assert inst.instalar(pacote_zip(tmp_path, "a.zip")).ja_instalado is False
-    assert not inst.arq_lock.exists()                                                           # sempre liberado
+    assert inst.arq_lock.exists()          # o arquivo nunca e apagado: nada a "limpar" que outro possa estar adquirindo
 
 
-def test_lock_e_liberado_apos_erro(tmp_path: Path, inst: Instalador) -> None:
+def test_lock_e_liberado_apos_erro_e_apos_excecao_de_qualquer_tipo(tmp_path: Path, inst: Instalador) -> None:
     with pytest.raises(ErroInstalacao):
         inst.instalar(escrever_zip(tmp_path / "ruim.zip", manifesto(protocolo=2)))
-    assert not inst.arq_lock.exists()
+    with pytest.raises(Queda):
+        with inst._bloqueio():
+            raise Queda()
+    with inst._bloqueio():                  # readquire sem erro
+        pass
+
+
+def test_exclusao_mutua_sob_disputa_de_varias_threads(inst: Instalador) -> None:
+    """Regressao da corrida do lock obsoleto: nunca dois donos ao mesmo tempo, mesmo com muita disputa."""
+    import threading
+    import time
+
+    dentro, maximo, entradas = [0], [0], [0]
+    guarda = threading.Lock()
+
+    def trabalhador() -> None:
+        meu = Instalador(inst.raiz)
+        feitas = 0
+        while feitas < 15:
+            try:
+                with meu._bloqueio():
+                    with guarda:
+                        dentro[0] += 1
+                        maximo[0] = max(maximo[0], dentro[0])
+                        entradas[0] += 1
+                    time.sleep(0.002)
+                    with guarda:
+                        dentro[0] -= 1
+                feitas += 1
+            except ErroInstalacao:
+                time.sleep(0.001)
+
+    ths = [threading.Thread(target=trabalhador) for _ in range(8)]
+    [th.start() for th in ths]
+    [th.join() for th in ths]
+    assert entradas[0] == 8 * 15 and maximo[0] == 1
+
+
+def test_lock_de_outro_processo_e_respeitado_e_liberado_quando_ele_morre(tmp_path: Path, inst: Instalador) -> None:
+    import subprocess
+    import sys
+    import time
+
+    raiz_repo = Path(__file__).resolve().parents[1]
+    codigo = (
+        "import sys,time;from src.jutta_ped.especialistas.instalador import Instalador\n"
+        "i=Instalador(sys.argv[1])\n"
+        "with i._bloqueio():\n"
+        "    print('pronto',flush=True);time.sleep(120)\n"
+    )
+    p = subprocess.Popen([sys.executable, "-c", codigo, str(inst.raiz)], cwd=raiz_repo, stdout=subprocess.PIPE, text=True)
+    try:
+        assert p.stdout.readline().strip() == "pronto"
+        with pytest.raises(ErroInstalacao) as e:
+            inst.recuperar()
+        assert e.value.codigo == COD_BLOQUEIO
+    finally:
+        import psutil
+        try:    # o python.exe da venv no Windows e um lancador: o dono real do lock e o processo filho
+            for filho in psutil.Process(p.pid).children(recursive=True):
+                filho.kill()
+        except psutil.NoSuchProcess:
+            pass
+        p.kill()
+        p.wait(timeout=10)
+        time.sleep(0.2)
+    assert inst.recuperar() == []          # o SO liberou o lock quando o dono morreu: nenhum lock "obsoleto" a tratar
 
 
 # --- CLI ---------------------------------------------------------------------------------------------------------
@@ -307,3 +380,94 @@ def test_cli_codigos_de_erro(tmp_path: Path) -> None:
     assert main(["instalar", str(escrever_zip(tmp_path / "r.zip", manifesto(protocolo=2))), "--raiz", raiz]) == COD_REPROVADO
     assert main(["ativar", "br.nao.existe", "1.0.0", "--raiz", raiz]) == COD_ESTADO
     assert main(["reverter", "br.nao.existe", "--raiz", raiz]) == COD_ESTADO
+
+
+# --- regressoes da revisao: marcador x registro, identidade do manifesto -------------------------------------
+
+def test_recuperacao_so_remove_o_marcador_depois_de_persistir_o_registro(tmp_path: Path, inst: Instalador, monkeypatch) -> None:
+    falhar_em(monkeypatch, "apos_mover")
+    with pytest.raises(Queda):
+        inst.instalar(pacote_zip(tmp_path, "a.zip"))
+    monkeypatch.undo()
+    real = inst._gravar_registro
+    monkeypatch.setattr(inst, "_gravar_registro", lambda reg: (_ for _ in ()).throw(OSError("disco cheio")))
+    with pytest.raises(OSError):
+        inst.recuperar()
+    assert len(list(inst.pendentes.iterdir())) == 1                     # marcador preservado
+    assert (inst.pacotes / "br.teste.bebe" / "1.0.0").is_dir()          # e o pacote nao foi para a quarentena
+    monkeypatch.setattr(inst, "_gravar_registro", real)
+    acoes = inst.recuperar()
+    assert any("instalacao concluida na recuperacao" in a for a in acoes)
+    assert "1.0.0" in inst.listar()["br.teste.bebe"]["versoes"] and not any(inst.quarentena.iterdir())
+    assert not any(inst.pendentes.iterdir())
+
+
+def _editar_manifesto(pasta: Path, f) -> None:
+    arq = pasta / "manifest.json"
+    m = json.loads(arq.read_text(encoding="utf-8"))
+    f(m)
+    arq.write_text(json.dumps(m), encoding="utf-8")
+
+
+def test_manifesto_alterado_depois_da_instalacao_bloqueia_a_ativacao(tmp_path: Path, inst: Instalador) -> None:
+    r = inst.instalar(pacote_zip(tmp_path, "a.zip"))
+    _editar_manifesto(r.caminho, lambda m: m["atributos"][0].update(validade_ms=999999))
+    with pytest.raises(ErroInstalacao) as e:
+        inst.ativar("br.teste.bebe", "1.0.0")
+    assert e.value.codigo == COD_INTEGRIDADE
+    assert inst.listar()["br.teste.bebe"]["versoes"]["1.0.0"]["estado"] == "corrompida"
+
+
+def test_qualquer_arquivo_alterado_muda_a_identidade(tmp_path: Path, inst: Instalador) -> None:
+    r = inst.instalar(pacote_zip(tmp_path, "a.zip"))
+    (r.caminho / "LEIAME.md").write_text("texto trocado", encoding="utf-8")          # nem peso nem manifesto
+    with pytest.raises(ErroInstalacao):
+        inst.ativar("br.teste.bebe", "1.0.0")
+    r2 = inst.instalar(pacote_zip(tmp_path, "b.zip", "2.0.0", pesos=PESOS_PT + b"2"))
+    (r2.caminho / "extra.txt").write_text("arquivo novo", encoding="utf-8")           # arquivo a mais
+    with pytest.raises(ErroInstalacao):
+        inst.ativar("br.teste.bebe", "2.0.0")
+
+
+def test_identidade_e_gravada_no_registro(tmp_path: Path, inst: Instalador) -> None:
+    inst.instalar(pacote_zip(tmp_path, "a.zip"))
+    v = inst.listar()["br.teste.bebe"]["versoes"]["1.0.0"]
+    assert len(v["conteudo_sha256"]) == 64 and len(v["manifesto_sha256"]) == 64
+
+
+def test_reinstalar_mesma_versao_com_manifesto_diferente_e_conflito(tmp_path: Path, inst: Instalador) -> None:
+    inst.instalar(pacote_zip(tmp_path, "a.zip"))
+    m = manifesto()
+    m["atributos"][0]["validade_ms"] = 3000          # mesmos pesos, mesma versao, manifesto diferente
+    with pytest.raises(ErroInstalacao) as e:
+        inst.instalar(escrever_zip(tmp_path / "b.zip", m))
+    assert e.value.codigo == COD_CONFLITO and e.value.slug == "versao_imutavel"
+
+
+def test_reverter_pula_versao_anterior_com_manifesto_alterado(tmp_path: Path, inst: Instalador) -> None:
+    for i, v in enumerate(("1.0.0", "1.1.0", "1.2.0")):
+        inst.instalar(pacote_zip(tmp_path, f"{v}.zip", v, pesos=PESOS_PT + bytes([i])))
+        inst.ativar("br.teste.bebe", v)
+    _editar_manifesto(inst.pacotes / "br.teste.bebe" / "1.1.0", lambda m: m["pacote"].update(autor="Outro"))
+    assert inst.reverter("br.teste.bebe") == "1.0.0"
+    assert inst.listar()["br.teste.bebe"]["versoes"]["1.1.0"]["estado"] == "corrompida"
+
+
+def test_recuperacao_nao_conclui_instalacao_cujo_manifesto_mudou_apos_mover(tmp_path: Path, inst: Instalador, monkeypatch) -> None:
+    falhar_em(monkeypatch, "apos_mover")
+    with pytest.raises(Queda):
+        inst.instalar(pacote_zip(tmp_path, "a.zip"))
+    monkeypatch.undo()
+    _editar_manifesto(inst.pacotes / "br.teste.bebe" / "1.0.0", lambda m: m["atributos"][0].update(validade_ms=999999))
+    acoes = inst.recuperar()
+    assert any("quarentena" in a for a in acoes) and inst.listar() == {}
+
+
+def test_registro_sem_identidade_nao_e_confiavel(tmp_path: Path, inst: Instalador) -> None:
+    inst.instalar(pacote_zip(tmp_path, "a.zip"))
+    reg = json.loads(inst.arq_registro.read_text(encoding="utf-8"))
+    del reg["especialistas"]["br.teste.bebe"]["versoes"]["1.0.0"]["conteudo_sha256"]      # registro do esquema antigo
+    inst.arq_registro.write_text(json.dumps(reg), encoding="utf-8")
+    with pytest.raises(ErroInstalacao) as e:
+        inst.ativar("br.teste.bebe", "1.0.0")
+    assert e.value.codigo == COD_INTEGRIDADE

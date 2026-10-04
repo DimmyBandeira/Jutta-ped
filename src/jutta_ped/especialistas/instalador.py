@@ -8,14 +8,16 @@ Sem dependencia do painel: o estado fica em arquivos sob `raiz` (padrao `runtime
     pendentes/<token>.json       marcador de operacao em curso (permite recuperar depois de queda)
     quarentena/                  diretorios orfaos ou reprovados, preservados para analise
     operacoes.jsonl              trilha de auditoria
-    .lock                        exclusao mutua entre processos
+    .lock                        arquivo de bloqueio do SO (flock/LockFileEx): o dono e quem o mantem aberto
 
 Garantias:
 * so entra no registro o que o validador aprovou ANTES e DEPOIS da extracao (mesmos hashes);
 * a extracao reaplica os limites, escreve so dentro de `staging` e nunca sobrescreve arquivos;
 * mover para `pacotes/` e uma troca atomica de pasta; o registro e gravado atomicamente (tmp + replace);
-* uma versao instalada e imutavel: reinstalar o mesmo id+versao com pesos diferentes e recusado;
-* ativar confere a integridade (hashes) na hora; reverter pula versoes anteriores corrompidas.
+* uma versao instalada e imutavel: reinstalar o mesmo id+versao com conteudo diferente (pesos OU manifesto OU
+  qualquer arquivo) e recusado;
+* a identidade do pacote e o hash canonico `jutta-dir-v1` de TODOS os arquivos (inclui manifest.json), mais o
+  SHA-256 do manifesto, gravados no registro; ativar, reverter e recuperar conferem essa identidade na hora.
 
 NAO faz: carregar modelos, executar nada do pacote, assinar/autenticar autoria (SHA-256 e integridade).
 """
@@ -32,15 +34,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator
 
-import psutil
-
 from src.jutta_ped.especialistas.fontes import Limites
 from src.jutta_ped.especialistas.hashing import hash_pasta, sha256_blocos
 from src.jutta_ped.especialistas.validador import Relatorio, _abrir_fonte, validar
 
 RAIZ_PADRAO = Path("runtime") / "especialistas"
 HISTORICO_MAX = 10
-ESQUEMA_REGISTRO = 1
+ESQUEMA_REGISTRO = 2       # 2: cada versao guarda `conteudo_sha256` e `manifesto_sha256`
 
 # Codigos de saida da CLI de instalacao (0 = ok, 1 = uso/E-S de argumento)
 COD_REPROVADO = 10      # o validador reprovou o pacote
@@ -65,6 +65,26 @@ class ResultadoInstalacao:
     ja_instalado: bool
     caminho: Path
     hashes: dict[str, str] = field(default_factory=dict)
+
+
+if os.name == "nt":
+    import msvcrt
+
+    def _travar(fd: int) -> None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+
+    def _destravar(fd: int) -> None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+else:  # pragma: no cover - Linux/macOS
+    import fcntl
+
+    def _travar(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def _destravar(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_UN)
 
 
 def _ponto(nome: str) -> None:
@@ -115,30 +135,22 @@ class Instalador:
 
     @contextmanager
     def _bloqueio(self) -> Iterator[None]:
-        for _ in range(2):
-            try:
-                fd = os.open(self.arq_lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                break
-            except FileExistsError:
-                if self._lock_obsoleto():
-                    self.arq_lock.unlink(missing_ok=True)
-                    continue
-                raise ErroInstalacao(COD_BLOQUEIO, "operacao_em_andamento", "outra operacao de instalacao esta em andamento") from None
-        else:  # pragma: no cover
-            raise ErroInstalacao(COD_BLOQUEIO, "operacao_em_andamento", "nao foi possivel obter o bloqueio")
+        """Exclusao mutua por bloqueio do SO sobre `.lock`. Quem mantem o descritor aberto e o dono; se o processo
+        morre o SO libera sozinho, entao nao existe 'lock obsoleto' para detectar nem apagar (era a fonte de uma
+        corrida em que dois processos viravam donos). O arquivo nunca e removido."""
+        fd = os.open(self.arq_lock, os.O_CREAT | os.O_RDWR)
         try:
-            os.write(fd, json.dumps({"pid": os.getpid(), "desde": _agora()}).encode())
+            _travar(fd)
+        except OSError:
             os.close(fd)
+            raise ErroInstalacao(COD_BLOQUEIO, "operacao_em_andamento", "outra operacao de instalacao esta em andamento") from None
+        try:
             yield
         finally:
-            self.arq_lock.unlink(missing_ok=True)
-
-    def _lock_obsoleto(self) -> bool:
-        try:
-            pid = int(json.loads(self.arq_lock.read_text(encoding="utf-8"))["pid"])
-        except (OSError, ValueError, KeyError, TypeError):
-            return True    # ilegivel/incompleto: nenhum dono confiavel
-        return not psutil.pid_exists(pid)
+            try:
+                _destravar(fd)
+            finally:
+                os.close(fd)
 
     def _log(self, op: str, **dados: Any) -> None:
         try:
@@ -192,11 +204,14 @@ class Instalador:
                 raise ErroInstalacao(COD_REPROVADO, "validacao_reprovada",
                                      f"pacote reprovado pelo validador (codigo {rel.codigo_saida}); nada foi instalado", rel)
             pid, ver = rel.pacote["id"], rel.pacote["versao"]
+            ident = self._identidade(origem)
             reg = self._ler_registro()
             existente = reg["especialistas"].get(pid, {}).get("versoes", {}).get(ver)
             destino = self.pacotes / pid / ver
             if existente:
-                if existente.get("estado") == "instalada" and existente.get("hashes") == rel.hashes:
+                mesmo = (existente.get("estado") == "instalada" and existente.get("hashes") == rel.hashes
+                         and existente.get("conteudo_sha256") == ident["conteudo_sha256"])
+                if mesmo:
                     return ResultadoInstalacao(pid, ver, True, destino, rel.hashes)
                 raise ErroInstalacao(COD_CONFLITO, "versao_imutavel",
                                      f"{pid} {ver} ja esta instalado com outros pesos (ou corrompido); publique uma nova versao")
@@ -210,17 +225,19 @@ class Instalador:
                 rel2 = validar(stg, host_protocolo=self.host_protocolo, limites=self.limites)
                 if not rel2.conformidade_estatica or rel2.hashes != rel.hashes or rel2.pacote != rel.pacote:
                     raise ErroInstalacao(COD_INTEGRIDADE, "extraido_divergente", "o conteudo extraido nao confere com o pacote validado", rel2)
+                if self._identidade(stg) != ident:
+                    raise ErroInstalacao(COD_INTEGRIDADE, "extraido_divergente", "a identidade do conteudo extraido (arquivos/manifesto) difere da origem")
                 if destino.exists():
                     raise ErroInstalacao(COD_CONFLITO, "destino_ocupado", f"{destino} ja existe fora do registro; rode 'recuperar'")
                 marcador.write_text(json.dumps({"id": pid, "versao": ver, "staging": str(stg), "destino": str(destino),
-                                                "hashes": rel.hashes, "origem": str(origem), "ts": _agora()}), encoding="utf-8")
+                                                "hashes": rel.hashes, **ident, "origem": str(origem), "ts": _agora()}), encoding="utf-8")
                 _ponto("apos_marcador")
                 destino.parent.mkdir(parents=True, exist_ok=True)
                 _substituir(stg, destino)
                 _ponto("apos_mover")
                 reg["especialistas"].setdefault(pid, {"ativa": None, "historico": [], "versoes": {}})["versoes"][ver] = {
                     "estado": "instalada", "instalado_em": _agora(), "origem": origem.name, "origem_sha256": self._hash_origem(origem),
-                    "hashes": rel.hashes, "nome": rel.pacote["nome"],
+                    "hashes": rel.hashes, **ident, "nome": rel.pacote["nome"],
                 }
                 self._gravar_registro(reg)
                 _ponto("apos_registro")
@@ -244,6 +261,14 @@ class Instalador:
             marcador.unlink(missing_ok=True)
         except Exception:  # noqa: BLE001 -- limpeza e melhor esforco; `recuperar` conclui o que faltar
             pass
+
+    def _identidade(self, origem: Path) -> dict[str, str]:
+        """Identidade persistida do pacote: hash canonico de TODOS os arquivos e SHA-256 do manifesto."""
+        with _abrir_fonte(origem) as fonte:
+            lst = fonte.listar(self.limites)
+            conteudo = hash_pasta((e.caminho, e.tamanho, (lambda c=e.caminho: fonte.blocos(c))) for e in lst.entradas)
+            manifesto = sha256_blocos(fonte.blocos("manifest.json"))
+        return {"conteudo_sha256": conteudo, "manifesto_sha256": manifesto}
 
     @staticmethod
     def _hash_origem(origem: Path) -> str:
@@ -276,12 +301,17 @@ class Instalador:
 
     # ------------------------------------------------------------------ ativar / reverter / remover
 
-    def _verificar(self, pid: str, ver: str, esperado: dict[str, str]) -> bool:
+    def _verificar(self, pid: str, ver: str, v: dict[str, Any]) -> bool:
+        """Pasta instalada == pacote registrado: validador aprova, hashes dos pesos iguais E identidade (todos os
+        arquivos + manifesto) igual a gravada na instalacao. Registro sem identidade (esquema 1) nao e confiavel."""
         pasta = self.pacotes / pid / ver
-        if not pasta.is_dir():
+        if not pasta.is_dir() or not v.get("conteudo_sha256") or not v.get("manifesto_sha256"):
             return False
         rel = validar(pasta, host_protocolo=self.host_protocolo, limites=self.limites)
-        return rel.conformidade_estatica and rel.hashes == esperado
+        if not rel.conformidade_estatica or rel.hashes != v["hashes"]:
+            return False
+        ident = self._identidade(pasta)
+        return ident["conteudo_sha256"] == v["conteudo_sha256"] and ident["manifesto_sha256"] == v["manifesto_sha256"]
 
     def ativar(self, pid: str, versao: str, *, verificar: bool = True) -> str:
         with self._bloqueio():
@@ -290,7 +320,7 @@ class Instalador:
             v = (esp or {}).get("versoes", {}).get(versao)
             if not v or v.get("estado") != "instalada":
                 raise ErroInstalacao(COD_ESTADO, "versao_inexistente", f"{pid} {versao} nao esta instalado (ou esta corrompido)")
-            if verificar and not self._verificar(pid, versao, v["hashes"]):
+            if verificar and not self._verificar(pid, versao, v):
                 v["estado"] = "corrompida"
                 self._gravar_registro(reg)
                 self._log("ativar_integridade", id=pid, versao=versao)
@@ -314,7 +344,7 @@ class Instalador:
             while esp["historico"]:
                 cand = esp["historico"].pop()
                 v = esp["versoes"].get(cand)
-                if v and v.get("estado") == "instalada" and self._verificar(pid, cand, v["hashes"]):
+                if v and v.get("estado") == "instalada" and self._verificar(pid, cand, v):
                     anterior = esp["ativa"]
                     esp["ativa"] = cand
                     self._gravar_registro(reg)
@@ -367,6 +397,7 @@ class Instalador:
             _remover_arvore(s) if s.is_dir() else s.unlink(missing_ok=True)
             acoes.append(f"staging descartado: {s.name}")
         alterado = False
+        concluidos: list[Path] = []     # marcadores so saem DEPOIS de o registro ser persistido
         for m in sorted(self.pendentes.glob("*.json")):
             try:
                 d = json.loads(m.read_text(encoding="utf-8"))
@@ -378,17 +409,20 @@ class Instalador:
             registrado = ver in reg["especialistas"].get(pid, {}).get("versoes", {})
             if not registrado and destino.is_dir():
                 rel = validar(destino, host_protocolo=self.host_protocolo, limites=self.limites)
-                if rel.conformidade_estatica and rel.hashes == d.get("hashes"):
+                ident = self._identidade(destino) if rel.conformidade_estatica else {}
+                if (rel.conformidade_estatica and rel.hashes == d.get("hashes") and ident
+                        and ident["conteudo_sha256"] == d.get("conteudo_sha256")
+                        and ident["manifesto_sha256"] == d.get("manifesto_sha256")):
                     reg["especialistas"].setdefault(pid, {"ativa": None, "historico": [], "versoes": {}})["versoes"][ver] = {
                         "estado": "instalada", "instalado_em": _agora(), "origem": Path(d.get("origem", "")).name,
-                        "origem_sha256": None, "hashes": rel.hashes, "nome": rel.pacote.get("nome", ""),
+                        "origem_sha256": None, "hashes": rel.hashes, **ident, "nome": rel.pacote.get("nome", ""),
                     }
                     alterado = True
                     acoes.append(f"instalacao concluida na recuperacao: {pid} {ver}")
                 else:
                     self._quarentenar(destino)
                     acoes.append(f"instalacao interrompida reprovada e enviada a quarentena: {pid} {ver}")
-            m.unlink(missing_ok=True)
+            concluidos.append(m)
         # versoes registradas sem diretorio; ativa invalida -> volta ao historico valido
         for pid, esp in reg["especialistas"].items():
             for ver, v in esp["versoes"].items():
@@ -403,7 +437,7 @@ class Instalador:
                 while esp["historico"]:
                     cand = esp["historico"].pop()
                     v = esp["versoes"].get(cand)
-                    if v and v.get("estado") == "instalada" and self._verificar(pid, cand, v["hashes"]):
+                    if v and v.get("estado") == "instalada" and self._verificar(pid, cand, v):
                         esp["ativa"] = cand
                         break
                 acoes.append(f"versao ativa invalida em {pid}; ativa agora: {esp['ativa']}")
@@ -415,6 +449,8 @@ class Instalador:
                     acoes.append(f"diretorio orfao enviado a quarentena: {pasta_id.name}/{pasta_ver.name}")
         if alterado:
             self._gravar_registro(reg)
+        for m in concluidos:           # registro persistido (ou nada a registrar): agora o marcador pode sair
+            m.unlink(missing_ok=True)
         for a in acoes:
             self._log("recuperacao", acao=a)
         return acoes
@@ -431,7 +467,7 @@ class Instalador:
                 if rel.conformidade_estatica and rel.pacote.get("id") == pasta_id.name and rel.pacote.get("versao") == pasta_ver.name:
                     reg["especialistas"].setdefault(pasta_id.name, {"ativa": None, "historico": [], "versoes": {}})["versoes"][pasta_ver.name] = {
                         "estado": "instalada", "instalado_em": _agora(), "origem": "(reconstruido)", "origem_sha256": None,
-                        "hashes": rel.hashes, "nome": rel.pacote["nome"],
+                        "hashes": rel.hashes, **self._identidade(pasta_ver), "nome": rel.pacote["nome"],
                     }
         self._gravar_registro(reg)
         return reg
