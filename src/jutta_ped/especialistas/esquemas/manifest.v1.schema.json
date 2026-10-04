@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "jutta-especialista/manifest/1",
+  "title": "Manifesto de especialista declarativo (protocolo 1)",
+  "description": "Contrato interno dos especialistas do sistema-mae. Independente de plugin/schemas/, que pertence a integracao com o Core. Valida a ESTRUTURA; regras semanticas (referencias, combinacoes, hashes) sao do validador.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocolo", "pacote", "entrada", "modelos", "atributos"],
+  "properties": {
+    "protocolo": { "const": 1 },
+    "pacote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "versao", "nome", "autor"],
+      "properties": {
+        "id": { "type": "string", "maxLength": 100, "pattern": "^[a-z0-9]+([.][a-z0-9-]+)+$" },
+        "versao": { "type": "string", "pattern": "^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$" },
+        "nome": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "descricao": { "type": "string", "maxLength": 400 },
+        "autor": { "type": "string", "minLength": 1, "maxLength": 80 }
+      }
+    },
+    "entrada": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fonte", "alvo", "formato"],
+      "properties": {
+        "fonte": { "enum": ["visivel", "termica"] },
+        "alvo": {
+          "oneOf": [
+            { "type": "object", "additionalProperties": false, "required": ["tipo", "classe_mestre"],
+              "properties": { "tipo": { "const": "recorte" }, "classe_mestre": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 48 } } },
+            { "type": "object", "additionalProperties": false, "required": ["tipo"],
+              "properties": { "tipo": { "const": "quadro" } } }
+          ]
+        },
+        "altura_minima_px": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "lote_max": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "formato": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cor", "largura", "altura", "redimensionamento", "normalizacao"],
+          "properties": {
+            "cor": { "enum": ["RGB", "BGR", "GRAY"] },
+            "largura": { "type": "integer", "minimum": 16, "maximum": 4096 },
+            "altura": { "type": "integer", "minimum": 16, "maximum": 4096 },
+            "redimensionamento": { "enum": ["letterbox", "esticar"] },
+            "normalizacao": { "enum": ["0-255", "0-1"] }
+          }
+        }
+      }
+    },
+    "modelos": {
+      "type": "array", "minItems": 1, "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "arquivo", "formato", "sha256", "dispositivos"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 32 },
+          "arquivo": { "type": "string", "minLength": 1, "maxLength": 240 },
+          "formato": { "enum": ["pt", "openvino", "onnx"] },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "dispositivos": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["cuda", "intel_gpu", "cpu"] } }
+        }
+      }
+    },
+    "atributos": {
+      "type": "array", "minItems": 1, "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["nome", "tipo", "validade_ms", "de"],
+        "properties": {
+          "nome": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 48 },
+          "tipo": { "enum": ["tri", "numero", "categoria"] },
+          "descricao": { "type": "string", "maxLength": 400 },
+          "unidade": { "type": "string", "maxLength": 16 },
+          "validade_ms": { "type": "integer", "minimum": 1, "maximum": 3600000 },
+          "faixa": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number" } },
+          "categorias": { "type": "array", "minItems": 2, "maxItems": 32, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 48 } },
+          "de": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["modelo", "tipo", "agregacao"],
+            "properties": {
+              "modelo": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+              "tipo": { "enum": ["deteccao", "classificacao"] },
+              "classes": { "type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 48 } },
+              "classe": { "type": "string", "minLength": 1, "maxLength": 48 },
+              "agregacao": { "enum": ["maior_confianca", "contagem", "probabilidade", "classe_mais_provavel"] },
+              "limiar_presente": { "$ref": "#/$defs/numero_ou_parametro" },
+              "limiar_ausente": { "$ref": "#/$defs/numero_ou_parametro" }
+            }
+          }
+        }
+      }
+    },
+    "parametros": {
+      "type": "array", "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["nome", "tipo", "padrao", "min", "max", "editavel_por"],
+        "properties": {
+          "nome": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 48 },
+          "tipo": { "const": "numero" },
+          "padrao": { "type": "number" },
+          "min": { "type": "number" },
+          "max": { "type": "number" },
+          "editavel_por": { "enum": ["fixo", "admin", "receita"] },
+          "descricao": { "type": "string", "maxLength": 400 }
+        }
+      }
+    },
+    "custo": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ms_por_recorte": { "type": "number", "exclusiveMinimum": 0, "maximum": 100000 },
+        "hardware": { "type": "string", "maxLength": 120 }
+      }
+    },
+    "compatibilidade": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "protocolo_min": { "const": 1 } }
+    },
+    "x": { "type": "object", "description": "Extensao livre do autor; ignorada pelo host." }
+  },
+  "$defs": {
+    "numero_ou_parametro": {
+      "oneOf": [
+        { "type": "number", "minimum": 0, "maximum": 1 },
+        { "type": "object", "additionalProperties": false, "required": ["$parametro"],
+          "properties": { "$parametro": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" } } }
+      ]
+    }
+  }
+}

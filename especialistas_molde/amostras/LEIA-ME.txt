@@ -1,0 +1,1 @@
+Opcional: recortes reais (001.jpg) e a saida esperada (001.esperado.json). Veja ../LEIAME.md.

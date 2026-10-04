@@ -1,0 +1,54 @@
+{
+  "protocolo": 1,
+  "pacote": {
+    "id": "br.exemplo.meu-especialista",
+    "versao": "0.1.0",
+    "nome": "Meu especialista",
+    "descricao": "Substitua por uma frase sobre o que o especialista mede.",
+    "autor": "Sua equipe"
+  },
+  "entrada": {
+    "fonte": "visivel",
+    "alvo": { "tipo": "recorte", "classe_mestre": "person" },
+    "altura_minima_px": 160,
+    "lote_max": 8,
+    "formato": { "cor": "RGB", "largura": 640, "altura": 640, "redimensionamento": "letterbox", "normalizacao": "0-1" }
+  },
+  "modelos": [
+    {
+      "id": "principal",
+      "arquivo": "modelos/MEU_MODELO.pt",
+      "formato": "pt",
+      "sha256": "PREENCHER: python -m src.jutta_ped.especialistas hash modelos/MEU_MODELO.pt",
+      "dispositivos": ["cuda", "cpu"]
+    }
+  ],
+  "atributos": [
+    {
+      "nome": "meu_atributo",
+      "tipo": "tri",
+      "descricao": "Substitua: o que significa 'sim' para este atributo.",
+      "validade_ms": 1500,
+      "de": {
+        "modelo": "principal",
+        "tipo": "deteccao",
+        "classes": ["NOME_DA_CLASSE_NO_MODELO"],
+        "agregacao": "maior_confianca",
+        "limiar_presente": { "$parametro": "limiar_presente" },
+        "limiar_ausente": 0.15
+      }
+    }
+  ],
+  "parametros": [
+    {
+      "nome": "limiar_presente",
+      "tipo": "numero",
+      "padrao": 0.4,
+      "min": 0.2,
+      "max": 0.9,
+      "editavel_por": "receita",
+      "descricao": "Confianca minima para afirmar presenca."
+    }
+  ],
+  "custo": { "ms_por_recorte": 20, "hardware": "PREENCHER com a medicao do autor (referencia, nao garantia)" }
+}
