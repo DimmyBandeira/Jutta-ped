@@ -1,0 +1,136 @@
+{
+  "bibliotecas": {
+    "cv2": "4.10.0",
+    "numpy": "2.3.5",
+    "openvino": "2026.2.1-21919-ede283a88e3-releases/2026/2",
+    "psutil": "7.2.2",
+    "pynvml": "?",
+    "torch": "2.5.1+cu121",
+    "ultralytics": "8.4.57"
+  },
+  "codigo": {
+    "arquivos_rastreados_modificados": [
+      "M requirements-dev.txt"
+    ],
+    "commit": "626d29c65e5bb80dd5f978ccf58e491b0bf7678b",
+    "ramo": "feature/motor-plugins-nos"
+  },
+  "coletado_em": "2026-10-04T14:20:45",
+  "configuracao_padrao_da_sessao": {
+    "analysis_fps": 5.0,
+    "camera_id": null,
+    "cooldown_seconds": 120.0,
+    "diagnostic_log_interval_frames": 60,
+    "force_cpu": false,
+    "lease_id": null,
+    "max_reconnect_attempts": 5,
+    "modo_coleta": false,
+    "reconnect_backoff_max_seconds": 30.0,
+    "reconnect_backoff_seconds": 2.0,
+    "reconnect_enabled": true,
+    "report_dir": "C:\\Users\\drb-d\\OneDrive\\Documentos\\Dimmy\\Programação\\006 - PedMVP\\Jutta-ped\\pediatria_results\\service_api",
+    "requested_device": "auto",
+    "source": "rtsp://exemplo",
+    "stream_id": null,
+    "suppressed_evidence_interval_seconds": 10.0,
+    "video_end_policy": "stop"
+  },
+  "fontes": [
+    {
+      "altura": 720,
+      "arquivo": "DVR-1-Ch.7-8 5-- PAV-Hall-ELEV SERVI.dav",
+      "bytes": 4250065,
+      "caminho": "C:\\Users\\drb-d\\OneDrive\\Documentos\\Dimmy\\Programação\\006 - PedMVP\\Jutta-ped\\videos\\DVR-1-Ch.7-8 5-- PAV-Hall-ELEV SERVI.dav",
+      "duracao_s": 32.0,
+      "fps": 15.0,
+      "largura": 1280,
+      "legivel": true,
+      "quadros": 480,
+      "sha256": "63bf6a2912e55e3dd44ae858ba234ac78dbcf72e01818eb924f6bd94e8027dd9"
+    },
+    {
+      "altura": 480,
+      "arquivo": "DVR-3-Ch.0-1 ACESSO-BLINDEX.avi",
+      "bytes": 1946132,
+      "caminho": "C:\\Users\\drb-d\\OneDrive\\Documentos\\Dimmy\\Programação\\006 - PedMVP\\Jutta-ped\\videos\\DVR-3-Ch.0-1 ACESSO-BLINDEX.avi",
+      "duracao_s": 14.7,
+      "fps": 30.0,
+      "largura": 960,
+      "legivel": true,
+      "quadros": 441,
+      "sha256": "7f4d41f23f752913e93eaad2ac9bf9c90c60b1864e7f020f0ef96c1818bfdc62"
+    },
+    {
+      "altura": 720,
+      "arquivo": "Corredor pediatria.mp4",
+      "bytes": 2466131,
+      "caminho": "C:\\Users\\drb-d\\OneDrive\\Documentos\\Dimmy\\Programação\\006 - PedMVP\\Jutta-ped\\videos\\Corredor pediatria.mp4",
+      "duracao_s": 10.0,
+      "fps": 24.0,
+      "largura": 1280,
+      "legivel": true,
+      "quadros": 240,
+      "sha256": "d99d666598db7ff2db8b7aa614974d474873aab77ec7f48d25a98da2f6743958"
+    },
+    {
+      "altura": 720,
+      "arquivo": "Corredor pediatria 2.mp4",
+      "bytes": 1936157,
+      "caminho": "C:\\Users\\drb-d\\OneDrive\\Documentos\\Dimmy\\Programação\\006 - PedMVP\\Jutta-ped\\videos\\Corredor pediatria 2.mp4",
+      "duracao_s": 10.0,
+      "fps": 24.0,
+      "largura": 1280,
+      "legivel": true,
+      "quadros": 240,
+      "sha256": "e0e6707ab19d36bde60448ba6ba202fed7082f150b2ceae277a839c1557494da"
+    }
+  ],
+  "modelos": {
+    "especialista": {
+      "algoritmo": "jutta-dir-v1",
+      "bytes": 10746487,
+      "caminho": "C:\\Users\\drb-d\\OneDrive\\Documentos\\Dimmy\\Programação\\006 - PedMVP\\Jutta-ped\\src\\models\\pediatria_child_detector_v6_jutta_openvino_model",
+      "sha256": "699472aa7d2885fa1a67704bcbd36cd811f3295aa4cdb74983edd20de8f5b181",
+      "tipo": "pasta"
+    },
+    "pessoa": {
+      "algoritmo": "jutta-dir-v1",
+      "bytes": 10807942,
+      "caminho": "C:\\Users\\drb-d\\OneDrive\\Documentos\\Dimmy\\Programação\\006 - PedMVP\\Jutta-ped\\src\\models\\yolo11n_openvino_model",
+      "sha256": "c6424a4ec6d6a8991f08f542f9a1246fbd256c19bb42a20b127706543e162bfe",
+      "tipo": "pasta"
+    }
+  },
+  "sistema": {
+    "cpu": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+    "gpus": [
+      {
+        "api": "nvml",
+        "driver": "572.61",
+        "indice": 0,
+        "nome": "NVIDIA GeForce RTX 3050 Laptop GPU",
+        "vram_total_mb": 4096
+      },
+      {
+        "api": "openvino",
+        "dispositivo": "CPU",
+        "nome": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz"
+      },
+      {
+        "api": "openvino",
+        "dispositivo": "GPU.0",
+        "nome": "Intel(R) UHD Graphics (iGPU)"
+      },
+      {
+        "api": "openvino",
+        "dispositivo": "GPU.1",
+        "nome": "NVIDIA GeForce RTX 3050 Laptop GPU (dGPU)"
+      }
+    ],
+    "nucleos_fisicos": 8,
+    "python": "3.12.7",
+    "ram_total_mb": 16048,
+    "so": "Windows-11-10.0.26200-SP0",
+    "threads_logicos": 16
+  }
+}

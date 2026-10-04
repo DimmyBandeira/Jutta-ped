@@ -1,0 +1,241 @@
+{
+  "agregado": {
+    "amostras_de_recursos_na_janela": 45,
+    "cpu_processo_nucleos_equivalentes": {
+      "max": 13.04,
+      "media": 11.3,
+      "n": 45,
+      "p50": 11.21,
+      "p95": 12.49
+    },
+    "cpu_processo_pct_do_total": {
+      "max": 81.51,
+      "media": 70.62,
+      "n": 45,
+      "p50": 70.04,
+      "p95": 78.05
+    },
+    "cpu_sistema_pct": {
+      "max": 100.0,
+      "media": 100.0,
+      "n": 45,
+      "p50": 100.0,
+      "p95": 100.0
+    },
+    "fps_efetivo_total": 68.821,
+    "gpu_util_pct": {
+      "max": 0.0,
+      "media": 0.0,
+      "n": 44,
+      "p50": 0.0,
+      "p95": 0.0
+    },
+    "nucleos_logicos": 16,
+    "quadros_descartados_total": 413,
+    "rss_mb": {
+      "max": 2273.25,
+      "media": 2247.62,
+      "n": 45,
+      "p50": 2248.45,
+      "p95": 2261.76
+    },
+    "rss_pico_mb": 2273.3,
+    "vram_base_mb": 132.0,
+    "vram_delta_medio_mb": 0.0,
+    "vram_pico_mb": 132.0,
+    "vram_usada_mb": {
+      "max": 132.0,
+      "media": 132.0,
+      "n": 44,
+      "p50": 132.0,
+      "p95": 132.0
+    }
+  },
+  "cameras": {
+    "bat0": {
+      "carga_inicial_s": 11.745,
+      "fonte": "DVR-1-Ch.7-8 5-- PAV-Hall-ELEV SERVI.dav",
+      "fps_efetivo": 0.0,
+      "fps_fonte": 15.0,
+      "idade_em_uso_ms": {
+        "max": 76028.96,
+        "media": 53498.66,
+        "n": 691,
+        "p50": 53298.39,
+        "p95": 73826.77
+      },
+      "idade_na_publicacao_ms": {
+        "max": null,
+        "media": null,
+        "n": 0,
+        "p50": null,
+        "p95": null
+      },
+      "latencia_processamento_ms": {
+        "max": null,
+        "media": null,
+        "n": 0,
+        "p50": null,
+        "p95": null
+      },
+      "primeiro_quadro_s": 14.116,
+      "quadros_analisados": 0,
+      "quadros_descartados": 0,
+      "quadros_lidos_da_fonte": 0
+    },
+    "bat1": {
+      "carga_inicial_s": 9.962,
+      "fonte": "DVR-3-Ch.0-1 ACESSO-BLINDEX.avi",
+      "fps_efetivo": 28.644,
+      "fps_fonte": 30.0,
+      "idade_em_uso_ms": {
+        "max": 162.43,
+        "media": 37.86,
+        "n": 686,
+        "p50": 32.61,
+        "p95": 85.59
+      },
+      "idade_na_publicacao_ms": {
+        "max": 194.07,
+        "media": 20.04,
+        "n": 1278,
+        "p50": 17.22,
+        "p95": 55.49
+      },
+      "latencia_processamento_ms": {
+        "max": 193.72,
+        "media": 17.53,
+        "n": 1289,
+        "p50": 15.93,
+        "p95": 53.07
+      },
+      "primeiro_quadro_s": 11.226,
+      "quadros_analisados": 1289,
+      "quadros_descartados": 61,
+      "quadros_lidos_da_fonte": 1350
+    },
+    "bat2": {
+      "carga_inicial_s": 7.64,
+      "fonte": "Corredor pediatria.mp4",
+      "fps_efetivo": 22.333,
+      "fps_fonte": 24.0,
+      "idade_em_uso_ms": {
+        "max": 238.29,
+        "media": 53.95,
+        "n": 689,
+        "p50": 43.74,
+        "p95": 134.83
+      },
+      "idade_na_publicacao_ms": {
+        "max": 193.86,
+        "media": 28.15,
+        "n": 998,
+        "p50": 19.95,
+        "p95": 90.69
+      },
+      "latencia_processamento_ms": {
+        "max": 181.8,
+        "media": 23.93,
+        "n": 1005,
+        "p50": 18.39,
+        "p95": 78.36
+      },
+      "primeiro_quadro_s": 12.598,
+      "quadros_analisados": 1005,
+      "quadros_descartados": 74,
+      "quadros_lidos_da_fonte": 1080
+    },
+    "bat3": {
+      "carga_inicial_s": 12.812,
+      "fonte": "Corredor pediatria 2.mp4",
+      "fps_efetivo": 17.844,
+      "fps_fonte": 24.0,
+      "idade_em_uso_ms": {
+        "max": 2435.68,
+        "media": 231.76,
+        "n": 687,
+        "p50": 55.43,
+        "p95": 1285.0
+      },
+      "idade_na_publicacao_ms": {
+        "max": 1870.1,
+        "media": 40.48,
+        "n": 796,
+        "p50": 22.94,
+        "p95": 96.47
+      },
+      "latencia_processamento_ms": {
+        "max": 1866.52,
+        "media": 36.27,
+        "n": 803,
+        "p50": 20.13,
+        "p95": 88.49
+      },
+      "primeiro_quadro_s": 18.087,
+      "quadros_analisados": 803,
+      "quadros_descartados": 278,
+      "quadros_lidos_da_fonte": 1080
+    }
+  },
+  "colocacao": {
+    "bat0": {
+      "analysis_fps_alvo": null,
+      "backend": "openvino",
+      "dispositivo": "cpu",
+      "motivo": "openvino_cpu"
+    },
+    "bat1": {
+      "analysis_fps_alvo": null,
+      "backend": "openvino",
+      "dispositivo": "cpu",
+      "motivo": "openvino_cpu"
+    },
+    "bat2": {
+      "analysis_fps_alvo": null,
+      "backend": "openvino",
+      "dispositivo": "cpu",
+      "motivo": "openvino_cpu"
+    },
+    "bat3": {
+      "analysis_fps_alvo": null,
+      "backend": "openvino",
+      "dispositivo": "cpu",
+      "motivo": "openvino_cpu"
+    }
+  },
+  "config": {
+    "analysis_fps": 0.0,
+    "aquecimento_s": 15.0,
+    "cameras": 4,
+    "deslocamento_video": 0,
+    "dispositivo_pedido": "auto",
+    "estavel_s": 45.0,
+    "fontes": [
+      "DVR-1-Ch.7-8 5-- PAV-Hall-ELEV SERVI.dav",
+      "DVR-3-Ch.0-1 ACESSO-BLINDEX.avi",
+      "Corredor pediatria.mp4",
+      "Corredor pediatria 2.mp4"
+    ],
+    "janela_real_s": 45.0
+  },
+  "eventos": {
+    "popup_alert": 17,
+    "popup_suppressed": 19
+  },
+  "fases": {
+    "carga_inicial_s": {
+      "bat0": 11.745,
+      "bat1": 9.962,
+      "bat2": 7.64,
+      "bat3": 12.812
+    },
+    "importacao_s": 0.056,
+    "parada_s": 0.219,
+    "primeiro_quadro_s": {
+      "bat0": 14.116,
+      "bat1": 11.226,
+      "bat2": 12.598,
+      "bat3": 18.087
+    }
+  }
+}

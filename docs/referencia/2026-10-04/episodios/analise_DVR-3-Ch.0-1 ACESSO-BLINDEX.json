@@ -1,0 +1,77 @@
+{
+  "alertas": [
+    {
+      "confianca": 0.955629289150238,
+      "estado": "CHILD_ALONE",
+      "evidencias": {
+        "annotated": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_wcdtjwnu\\evidence\\sessions\\20261004_143721_22c6f4\\annotated\\20261004_143736_203__episodio__track_1__popup_alert__CHILD_ALONE_bbox.jpg",
+        "crop": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_wcdtjwnu\\evidence\\sessions\\20261004_143721_22c6f4\\crops\\20261004_143736_203__episodio__track_1__popup_alert__CHILD_ALONE_crop.jpg",
+        "frame": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_wcdtjwnu\\evidence\\sessions\\20261004_143721_22c6f4\\frames\\20261004_143736_203__episodio__track_1__popup_alert__CHILD_ALONE_frame.jpg",
+        "metadata": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_wcdtjwnu\\evidence\\sessions\\20261004_143721_22c6f4\\metadata\\20261004_143736_203__episodio__track_1__popup_alert__CHILD_ALONE.json"
+      },
+      "motivo": "Crianca persistente sem adulto visivel.",
+      "quadro": 190,
+      "t_s": 6.333,
+      "tipo": "popup_alert",
+      "trilha": 1
+    },
+    {
+      "confianca": 0.9476543664932251,
+      "estado": "CHILD_ALONE",
+      "evidencias": {
+        "annotated": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_wcdtjwnu\\evidence\\sessions\\20261004_143721_22c6f4\\annotated\\20261004_143736_701__episodio__track_18__popup_alert__CHILD_ALONE_bbox.jpg",
+        "crop": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_wcdtjwnu\\evidence\\sessions\\20261004_143721_22c6f4\\crops\\20261004_143736_701__episodio__track_18__popup_alert__CHILD_ALONE_crop.jpg",
+        "frame": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_wcdtjwnu\\evidence\\sessions\\20261004_143721_22c6f4\\frames\\20261004_143736_701__episodio__track_18__popup_alert__CHILD_ALONE_frame.jpg",
+        "metadata": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_wcdtjwnu\\evidence\\sessions\\20261004_143721_22c6f4\\metadata\\20261004_143736_701__episodio__track_18__popup_alert__CHILD_ALONE.json"
+      },
+      "motivo": "Companhia infantil insuficiente ou conflitante.",
+      "quadro": 197,
+      "t_s": 6.567,
+      "tipo": "popup_alert",
+      "trilha": 18
+    }
+  ],
+  "fps": 30.0,
+  "quadros_analisados": 441,
+  "quadros_do_arquivo": 441,
+  "sha256": "7f4d41f23f752913e93eaad2ac9bf9c90c60b1864e7f020f0ef96c1818bfdc62",
+  "suprimidos": [
+    {
+      "confianca": 0.955629289150238,
+      "estado": "CHILD_ALONE",
+      "evidencias": {
+        "annotated": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_wcdtjwnu\\evidence\\sessions\\20261004_143721_22c6f4\\annotated\\20261004_143736_267__episodio__track_1__popup_suppressed__CHILD_ALONE_bbox.jpg",
+        "crop": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_wcdtjwnu\\evidence\\sessions\\20261004_143721_22c6f4\\crops\\20261004_143736_267__episodio__track_1__popup_suppressed__CHILD_ALONE_crop.jpg",
+        "frame": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_wcdtjwnu\\evidence\\sessions\\20261004_143721_22c6f4\\frames\\20261004_143736_267__episodio__track_1__popup_suppressed__CHILD_ALONE_frame.jpg",
+        "metadata": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_wcdtjwnu\\evidence\\sessions\\20261004_143721_22c6f4\\metadata\\20261004_143736_267__episodio__track_1__popup_suppressed__CHILD_ALONE.json"
+      },
+      "motivo": "Crianca persistente sem adulto visivel.",
+      "quadro": 191,
+      "t_s": 6.367,
+      "tipo": "popup_suppressed",
+      "trilha": 1
+    },
+    {
+      "confianca": 0.9476543664932251,
+      "estado": "CHILD_ALONE",
+      "evidencias": {
+        "annotated": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_wcdtjwnu\\evidence\\sessions\\20261004_143721_22c6f4\\annotated\\20261004_143736_743__episodio__track_18__popup_suppressed__CHILD_ALONE_bbox.jpg",
+        "crop": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_wcdtjwnu\\evidence\\sessions\\20261004_143721_22c6f4\\crops\\20261004_143736_743__episodio__track_18__popup_suppressed__CHILD_ALONE_crop.jpg",
+        "frame": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_wcdtjwnu\\evidence\\sessions\\20261004_143721_22c6f4\\frames\\20261004_143736_743__episodio__track_18__popup_suppressed__CHILD_ALONE_frame.jpg",
+        "metadata": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_wcdtjwnu\\evidence\\sessions\\20261004_143721_22c6f4\\metadata\\20261004_143736_743__episodio__track_18__popup_suppressed__CHILD_ALONE.json"
+      },
+      "motivo": "Companhia infantil insuficiente ou conflitante.",
+      "quadro": 198,
+      "t_s": 6.6,
+      "tipo": "popup_suppressed",
+      "trilha": 18
+    }
+  ],
+  "tempo_de_analise_s": 18.36,
+  "terminou": true,
+  "trilhas_distintas_nos_alertas": [
+    1,
+    18
+  ],
+  "video": "DVR-3-Ch.0-1 ACESSO-BLINDEX.avi"
+}

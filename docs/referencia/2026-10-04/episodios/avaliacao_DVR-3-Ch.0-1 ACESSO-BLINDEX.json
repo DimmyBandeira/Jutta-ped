@@ -1,0 +1,12 @@
+{
+  "alertas_emitidos": 2,
+  "alertas_suprimidos": 2,
+  "metricas": null,
+  "motivo": "nenhum arquivo de episodios para este video",
+  "revisado": false,
+  "trilhas_distintas_nos_alertas": [
+    1,
+    18
+  ],
+  "video": "DVR-3-Ch.0-1 ACESSO-BLINDEX.avi"
+}

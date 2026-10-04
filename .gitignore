@@ -13,3 +13,5 @@ build/
 dist/
 release/
 .cartographer/
+# Bateria de referencia: quadros de CFTV para revisao humana (pessoas identificaveis) nao sao versionados
+docs/referencia/*/episodios/revisao/**/*.jpg

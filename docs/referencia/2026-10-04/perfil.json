@@ -1,0 +1,195 @@
+{
+  "aquecimento": 20,
+  "fps_com_perfil": 85.733,
+  "fps_sem_perfil": 95.268,
+  "leitura": "pct_python_puro = tempo proprio em funcoes Python (executam bytecode, seguram o GIL); pct_envoltorio_de_inferencia_nativa = funcoes Python que so esperam uma chamada nativa de inferencia (OpenVINO); pct_nativo_builtin = builtins/C visiveis (OpenCV, NumPy, imencode). O cProfile infla a fatia Python (ver overhead). Esperar o GIL so e medido com varias threads: ver `escala`.",
+  "ms_por_quadro_sem_perfil": 10.5,
+  "overhead_do_cprofile_pct": 11.1,
+  "perfil": {
+    "pct_envoltorio_de_inferencia_nativa": 56.62,
+    "pct_nativo_builtin": 25.36,
+    "pct_python_por_pacote": {
+      "modulo/pediatria": 1.48,
+      "numpy": 1.37,
+      "openvino": 1.63,
+      "src/jutta_ped": 0.33,
+      "stdlib/outros": 0.58,
+      "torch": 1.6,
+      "ultralytics": 11.02
+    },
+    "pct_python_puro": 18.02,
+    "tempo_total_s": 1.8036,
+    "top_envoltorio": [
+      {
+        "funcao": "_ov_api.py:119(infer)",
+        "pct": 56.59,
+        "tempo_proprio_s": 1.0207
+      },
+      {
+        "funcao": "_ov_api.py:376(__call__)",
+        "pct": 0.03,
+        "tempo_proprio_s": 0.0005
+      }
+    ],
+    "top_nativo": [
+      {
+        "funcao": "<method 'copy' of 'numpy.ndarray' objects>",
+        "pct": 6.0,
+        "tempo_proprio_s": 0.1082
+      },
+      {
+        "funcao": "<imencode>",
+        "pct": 4.41,
+        "tempo_proprio_s": 0.0796
+      },
+      {
+        "funcao": "<method 'astype' of 'numpy.ndarray' objects>",
+        "pct": 2.6,
+        "tempo_proprio_s": 0.0469
+      },
+      {
+        "funcao": "<resize>",
+        "pct": 2.39,
+        "tempo_proprio_s": 0.0431
+      },
+      {
+        "funcao": "<built-in method numpy.ascontiguousarray>",
+        "pct": 1.81,
+        "tempo_proprio_s": 0.0327
+      },
+      {
+        "funcao": "<copyMakeBorder>",
+        "pct": 1.16,
+        "tempo_proprio_s": 0.0209
+      },
+      {
+        "funcao": "<method 'float' of 'torch._C.TensorBase' objects>",
+        "pct": 1.01,
+        "tempo_proprio_s": 0.0182
+      },
+      {
+        "funcao": "<built-in method torch.tensor>",
+        "pct": 0.83,
+        "tempo_proprio_s": 0.0149
+      },
+      {
+        "funcao": "<built-in method torch._ops.torchvision.nms>",
+        "pct": 0.45,
+        "tempo_proprio_s": 0.0081
+      },
+      {
+        "funcao": "<method 'send' of 'generator' objects>",
+        "pct": 0.35,
+        "tempo_proprio_s": 0.0062
+      },
+      {
+        "funcao": "<method 'amax' of 'torch._C.TensorBase' objects>",
+        "pct": 0.31,
+        "tempo_proprio_s": 0.0056
+      },
+      {
+        "funcao": "<method 'tofile' of 'numpy.ndarray' objects>",
+        "pct": 0.3,
+        "tempo_proprio_s": 0.0055
+      },
+      {
+        "funcao": "<method 'clamp_' of 'torch._C.TensorBase' objects>",
+        "pct": 0.17,
+        "tempo_proprio_s": 0.0031
+      },
+      {
+        "funcao": "<built-in method builtins.isinstance>",
+        "pct": 0.17,
+        "tempo_proprio_s": 0.003
+      },
+      {
+        "funcao": "<built-in method torch.cat>",
+        "pct": 0.15,
+        "tempo_proprio_s": 0.0028
+      }
+    ],
+    "top_python": [
+      {
+        "funcao": "nms.py:13(non_max_suppression)",
+        "pct": 1.62,
+        "tempo_proprio_s": 0.0293
+      },
+      {
+        "funcao": "data_dispatcher.py:74(_)",
+        "pct": 1.32,
+        "tempo_proprio_s": 0.0238
+      },
+      {
+        "funcao": "predictor.py:279(stream_inference)",
+        "pct": 1.22,
+        "tempo_proprio_s": 0.0221
+      },
+      {
+        "funcao": "predictor.py:154(preprocess)",
+        "pct": 1.21,
+        "tempo_proprio_s": 0.0218
+      },
+      {
+        "funcao": "module.py:1740(_call_impl)",
+        "pct": 0.95,
+        "tempo_proprio_s": 0.0171
+      },
+      {
+        "funcao": "shape_base.py:380(stack)",
+        "pct": 0.69,
+        "tempo_proprio_s": 0.0124
+      },
+      {
+        "funcao": "ops.py:102(scale_boxes)",
+        "pct": 0.56,
+        "tempo_proprio_s": 0.0102
+      },
+      {
+        "funcao": "crop_pipeline.py:429(_parse_person_result)",
+        "pct": 0.47,
+        "tempo_proprio_s": 0.0085
+      },
+      {
+        "funcao": "ops.py:231(xywh2xyxy)",
+        "pct": 0.43,
+        "tempo_proprio_s": 0.0078
+      },
+      {
+        "funcao": "byte_tracker.py:282(update)",
+        "pct": 0.34,
+        "tempo_proprio_s": 0.0062
+      },
+      {
+        "funcao": "kalman_filter.py:156(multi_predict)",
+        "pct": 0.29,
+        "tempo_proprio_s": 0.0052
+      },
+      {
+        "funcao": "matching.py:18(linear_assignment)",
+        "pct": 0.27,
+        "tempo_proprio_s": 0.0049
+      },
+      {
+        "funcao": "augment.py:1746(apply_image)",
+        "pct": 0.27,
+        "tempo_proprio_s": 0.0049
+      },
+      {
+        "funcao": "metrics.py:51(bbox_ioa)",
+        "pct": 0.27,
+        "tempo_proprio_s": 0.0049
+      },
+      {
+        "funcao": "__init__.py:351(check_cfg)",
+        "pct": 0.27,
+        "tempo_proprio_s": 0.0048
+      }
+    ]
+  },
+  "placement": {
+    "backend": "openvino",
+    "dispositivo": "cpu"
+  },
+  "quadros_por_fase": 150,
+  "video": "DVR-1-Ch.7-8 5-- PAV-Hall-ELEV SERVI.dav"
+}
