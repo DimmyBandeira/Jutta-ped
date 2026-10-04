@@ -23,11 +23,11 @@ remoto, formato `onnx`, térmico, migração da pediatria.
 | `src/jutta_ped/especialistas/backend_ultralytics.py` | Backend `pt`/`openvino` (importado só ao carregar um modelo) |
 | `src/jutta_ped/especialistas/instalador.py` | `obter_ativo()` (versão ativa com verificação opcional; somente leitura) |
 | `src/jutta_ped/especialistas/cli.py` | subcomando `executar` |
-| `tests/test_especialistas_executor.py` | 23 testes |
+| `tests/test_especialistas_executor.py` | 38 testes |
 
 ## Validação executada (Windows, Python 3.12.7)
 
-* `tests/test_especialistas_executor.py`: **23 passaram**, com backend falso determinístico (pesos sintéticos): contrato do
+* `tests/test_especialistas_executor.py`: **38 passaram** (23 do lote inicial + 15 das correções), com backend falso determinístico (pesos sintéticos): contrato do
   resultado; sim/não/indeterminado por limiares; contagem e fora da faixa; parâmetros efetivos e validação; limiares invertidos;
   `config_hash`; altura mínima sem chamar o modelo; pedidos inválidos isolados e na mesma ordem; prazo; divisão em lotes
   (3, 3, 1); pacote adulterado antes da carga (falha fechada, nada carregado); reconferência após `descarregar`; classe
@@ -41,6 +41,16 @@ remoto, formato `onnx`, térmico, migração da pediatria.
   por quadro em média em 10 execuções (RTX 3050, fp16). São medidas de fumaça de uma execução, não benchmark.
 * Suíte completa: **518 passaram, 6 puladas** (testes de navegador de vídeo, puladas como antes).
 
+## Correções após revisão externa (04/10/2026)
+
+1. **Prazo entre lotes:** com `custo` ausente, dois pedidos de 10 ms e inferência de 20 ms por lote voltavam ambos `ok` (o segundo,
+   já vencido antes de começar). Agora o orçamento é conferido por pedido antes de cada lote e depois da inferência, com ou sem
+   `custo`; resultado vencido não é entregue. Testes com relógio falso (determinísticos).
+2. **Pré-processamento:** o backend reduzia `largura`/`altura` a um `max()` e ignorava `esticar`/`letterbox`, `cor` e `normalizacao`.
+   Agora aplica o formato declarado ou recusa explicitamente (tabela no manual, seção 14); inclui `letterbox`/`esticar` para formas
+   não quadradas, troca de canais para `BGR`, e recusa `GRAY`, `0-255`, classificação não quadrada, forma OpenVINO divergente e
+   tarefas não suportadas. A assinatura do backend passou a receber o `formato` completo.
+
 ## Limitações
 
 * Não valida **qualidade** de nenhum modelo; o resultado "nao" nos quadros reais não prova detecção correta.
@@ -48,7 +58,7 @@ remoto, formato `onnx`, térmico, migração da pediatria.
 * Um executor por processo e sem fila: não há justiça entre câmeras nem controle de memória/VRAM (etapa 04).
 * `onnx` não executa (sem `onnxruntime`); `termica`/`quadro` só como fonte única, sem fusão.
 * `.pt` executa pickle ao carregar: só pacotes da equipe, sempre depois da conferência de integridade.
-* Pré-processamento depende do Ultralytics; `cor`/`normalizacao` do manifesto não são aplicadas por este backend.
+* O pré-processamento aplica o formato declarado (ver correções) mas só para Ultralytics `detect`/`classify`; outros backends/tarefas são recusados.
 
 ## Próximo lote recomendado
 

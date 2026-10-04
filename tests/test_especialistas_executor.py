@@ -56,7 +56,7 @@ class BackendFalso:
         self.cargas: list[tuple[str, str]] = []
         self.lotes: list[int] = []
 
-    def carregar(self, modelo, pasta, dispositivo, imgsz):
+    def carregar(self, modelo, pasta, dispositivo, formato):
         self.cargas.append((modelo["id"], dispositivo))
         if dispositivo in self.falha_em:
             raise RuntimeError(f"sem {dispositivo}")
@@ -453,3 +453,206 @@ def test_fumaca_modelo_real_ultralytics(tmp_path: Path, inst: Instalador) -> Non
     assert {a["nome"] for a in r["atributos"]} == {"bebe_no_colo", "bebe_no_conforto", "carrinhos"}
     assert all(a["estado"] in ("definido", "indeterminado") for a in r["atributos"])
     assert r["tempos"]["inferencia_ms"] > 0 and ex.info("br.teste.bebe")["dispositivos"]["principal"] in ("cpu", "cuda:0")
+
+
+# --- prazo entre lotes e resultado vencido (relogio falso, deterministico) ---------------------------------------------
+
+class RelogioFalso:
+    def __init__(self) -> None:
+        self.t = 1000.0
+
+    def perf_counter(self) -> float:
+        return self.t
+
+    def avancar_ms(self, ms: float) -> None:
+        self.t += ms / 1000.0
+
+
+def _executor_com_relogio(inst, monkeypatch, custo_inferencia_ms: float, lote_max: int = 1):
+    import types
+
+    import src.jutta_ped.especialistas.executor as ex_mod
+
+    relogio = RelogioFalso()
+    monkeypatch.setattr(ex_mod, "time", types.SimpleNamespace(perf_counter=relogio.perf_counter))
+
+    class BackendComRelogio(BackendFalso):
+        def carregar(self, modelo, pasta, dispositivo, formato):
+            mod = super().carregar(modelo, pasta, dispositivo, formato)
+            original = mod.inferir
+
+            def inferir(imagens):
+                relogio.avancar_ms(custo_inferencia_ms)
+                return original(imagens)
+            mod.inferir = inferir
+            return mod
+
+    backend = BackendComRelogio()
+    return fabrica(inst, backend), backend
+
+
+def _sem_custo(m: dict, lote_max: int = 1) -> dict:
+    m.pop("custo", None)
+    m["entrada"]["lote_max"] = lote_max
+    return m
+
+
+def test_orcamento_vence_entre_lotes_mesmo_sem_custo_declarado(tmp_path: Path, inst: Instalador, monkeypatch) -> None:
+    instalar_ativar(inst, tmp_path, _sem_custo(manifesto_bebe()), b"pesos-a")
+    ex, backend = _executor_com_relogio(inst, monkeypatch, custo_inferencia_ms=20)
+    ex.executar("br.teste.bebe", [pedido(0)])                                          # aquece (carga fora do orcamento)
+    backend.lotes.clear()
+    rs = ex.executar("br.teste.bebe", [pedido(1, restante_ms=10), pedido(2, restante_ms=10)])
+    assert [r["estado"] for r in rs] == ["erro", "erro"] and all(r["erro"]["codigo"] == E_PRAZO for r in rs)
+    assert backend.lotes == [1]                                                        # o 2o pedido nem chegou ao modelo
+    assert "vencido" in rs[0]["erro"]["mensagem"]
+
+
+def test_resultado_pronto_depois_do_prazo_nunca_sai_como_ok(tmp_path: Path, inst: Instalador, monkeypatch) -> None:
+    instalar_ativar(inst, tmp_path, _sem_custo(manifesto_bebe(), lote_max=3), b"pesos-a")
+    ex, backend = _executor_com_relogio(inst, monkeypatch, custo_inferencia_ms=20)
+    ex.executar("br.teste.bebe", [pedido(0)])
+    rs = ex.executar("br.teste.bebe", [pedido(1, img(b=230, g=1), restante_ms=500), pedido(2, img(b=230, g=1), restante_ms=10), pedido(3, img(b=230, g=1))])
+    assert [r["estado"] for r in rs] == ["ok", "erro", "ok"]                           # so o vencido e barrado; sem prazo segue
+    assert rs[1]["erro"]["codigo"] == E_PRAZO and rs[1]["atributos"] == []              # nenhum atributo entregue
+
+
+def test_pedidos_seguintes_herdam_o_tempo_gasto_pelos_lotes_anteriores(tmp_path: Path, inst: Instalador, monkeypatch) -> None:
+    instalar_ativar(inst, tmp_path, _sem_custo(manifesto_bebe()), b"pesos-a")
+    ex, backend = _executor_com_relogio(inst, monkeypatch, custo_inferencia_ms=60)
+    ex.executar("br.teste.bebe", [pedido(0)])
+    backend.lotes.clear()
+    rs = ex.executar("br.teste.bebe", [pedido(i, restante_ms=100) for i in (1, 2, 3)])
+    # lote 1: 0->60 ms (ok); lote 2 comeca com 40 ms restantes, termina em 120 > 100 (vencido); lote 3 comeca em 120 (expirado)
+    assert [r["estado"] for r in rs] == ["ok", "erro", "erro"] and backend.lotes == [1, 1]
+
+
+def test_orcamentos_generosos_continuam_ok(tmp_path: Path, inst: Instalador, monkeypatch) -> None:
+    instalar_ativar(inst, tmp_path, _sem_custo(manifesto_bebe()), b"pesos-a")
+    ex, _ = _executor_com_relogio(inst, monkeypatch, custo_inferencia_ms=20)
+    rs = ex.executar("br.teste.bebe", [pedido(i, restante_ms=5000) for i in (1, 2, 3)])
+    assert [r["estado"] for r in rs] == ["ok", "ok", "ok"]
+
+
+def test_recorte_com_dtype_ou_canais_invalidos(tmp_path: Path, inst: Instalador) -> None:
+    instalar_ativar(inst, tmp_path, manifesto_bebe(), b"pesos-a")
+    ex = fabrica(inst, BackendFalso())
+    rs = ex.executar("br.teste.bebe", [pedido(1, np.zeros((50, 50, 3), np.float32)), pedido(2, np.zeros((50, 50, 5), np.uint8)),
+                                       pedido(3, img(b=230, g=1))])
+    assert [r["erro"]["codigo"] if r["erro"] else "ok" for r in rs] == [E_RECORTE, E_RECORTE, "ok"]
+
+
+# --- pre-processamento do backend Ultralytics: aplica o formato declarado ou recusa -------------------------------
+
+FMT = {"cor": "RGB", "largura": 64, "altura": 64, "redimensionamento": "letterbox", "normalizacao": "0-1"}
+
+
+def test_preparar_letterbox_quadrado_centraliza_e_preenche_com_114() -> None:
+    from src.jutta_ped.especialistas.backend_ultralytics import PREENCHIMENTO, preparar_imagem
+
+    larga = np.full((20, 40, 3), 200, np.uint8)                       # 2:1
+    saida = preparar_imagem(larga, FMT)
+    assert saida.shape == (64, 64, 3)
+    assert (saida[0] == PREENCHIMENTO).all() and (saida[63] == PREENCHIMENTO).all()      # barras acima e abaixo
+    assert (saida[32] == 200).all()                                                         # conteudo no meio
+    assert (saida[16:48] == 200).all() and (saida[:16] == PREENCHIMENTO).all()              # 64x32 centrado: 16 de cada lado
+
+
+def test_preparar_letterbox_nao_quadrado_e_esticar() -> None:
+    from src.jutta_ped.especialistas.backend_ultralytics import PREENCHIMENTO, preparar_imagem
+
+    img_ = np.full((100, 50, 3), 90, np.uint8)                        # 1:2 (alta)
+    nq = preparar_imagem(img_, {**FMT, "largura": 96, "altura": 64})
+    assert nq.shape == (64, 96, 3) and (nq[:, 0] == PREENCHIMENTO).all() and (nq[32, 48] == 90).all()
+    es = preparar_imagem(img_, {**FMT, "largura": 96, "altura": 64, "redimensionamento": "esticar"})
+    assert es.shape == (64, 96, 3) and (es == 90).all()               # sem barras: preenche tudo
+
+
+def test_preparar_cor_bgr_troca_canais_e_aceita_cinza_e_alfa() -> None:
+    from src.jutta_ped.especialistas.backend_ultralytics import preparar_imagem
+
+    bgr = np.zeros((8, 8, 3), np.uint8)
+    bgr[..., 0] = 10      # B
+    bgr[..., 2] = 250     # R
+    rgb_ok = preparar_imagem(bgr, {**FMT, "largura": 8, "altura": 8})
+    assert tuple(rgb_ok[0, 0]) == (10, 0, 250)                          # RGB declarado: entrega como veio (Ultralytics inverte)
+    bgr_decl = preparar_imagem(bgr, {**FMT, "largura": 8, "altura": 8, "cor": "BGR"})
+    assert tuple(bgr_decl[0, 0]) == (250, 0, 10)                        # BGR declarado: canais trocados
+    assert preparar_imagem(np.full((8, 8), 7, np.uint8), {**FMT, "largura": 8, "altura": 8}).shape == (8, 8, 3)
+    assert preparar_imagem(np.zeros((8, 8, 4), np.uint8), {**FMT, "largura": 8, "altura": 8}).shape == (8, 8, 3)
+    with pytest.raises(ValueError):
+        preparar_imagem(np.zeros((8, 8, 3), np.float32), FMT)
+
+
+@pytest.mark.parametrize("mudanca,tarefa,trecho", [
+    ({"cor": "GRAY"}, "detect", "GRAY"),
+    ({"normalizacao": "0-255"}, "detect", "0-255"),
+    ({"largura": 96, "altura": 64}, "classify", "largura == altura"),
+    ({}, "segment", "segment"),
+])
+def test_formatos_nao_suportados_sao_recusados_com_razao(mudanca, tarefa, trecho) -> None:
+    from src.jutta_ped.especialistas.backend_ultralytics import validar_formato
+    from src.jutta_ped.especialistas.executor import FormatoNaoSuportado
+
+    with pytest.raises(FormatoNaoSuportado) as e:
+        validar_formato({**FMT, **mudanca}, tarefa)
+    assert trecho in str(e.value)
+
+
+def test_openvino_com_forma_exportada_diferente_e_recusado() -> None:
+    from src.jutta_ped.especialistas.backend_ultralytics import validar_formato
+    from src.jutta_ped.especialistas.executor import FormatoNaoSuportado
+
+    validar_formato({**FMT, "largura": 640, "altura": 640}, "detect", (640, 640))           # igual: aceito
+    with pytest.raises(FormatoNaoSuportado) as e:
+        validar_formato({**FMT, "largura": 960, "altura": 960}, "detect", (640, 640))
+    assert "640x640" in str(e.value) and "960x960" in str(e.value)
+
+
+def _yolo_falso(monkeypatch, tarefa: str = "detect"):
+    import sys
+    import types
+
+    chamadas: list[dict] = []
+
+    class R:
+        names = {0: "bebe_colo", 1: "outra"}
+        probs = None
+        boxes = None
+
+    class YOLO:
+        def __init__(self, caminho, task=None):
+            self.names = {0: "bebe_colo", 1: "outra"}
+            self.task = tarefa
+
+        def predict(self, imagens, **kw):
+            chamadas.append({"imagens": imagens, **kw})
+            return [R() for _ in imagens]
+
+    monkeypatch.setitem(sys.modules, "ultralytics", types.SimpleNamespace(YOLO=YOLO))
+    return chamadas
+
+
+def test_backend_entrega_ao_ultralytics_imagem_no_tamanho_declarado(tmp_path: Path, monkeypatch) -> None:
+    from src.jutta_ped.especialistas.backend_ultralytics import BackendUltralytics
+
+    chamadas = _yolo_falso(monkeypatch)
+    (tmp_path / "modelos").mkdir()
+    (tmp_path / "modelos" / "m.pt").write_bytes(b"x")
+    fmt = {**FMT, "largura": 96, "altura": 64}
+    modelo = BackendUltralytics().carregar({"id": "principal", "arquivo": "modelos/m.pt", "formato": "pt"}, tmp_path, "cpu", fmt)
+    assert modelo.nomes == ["bebe_colo", "outra"]
+    saida = modelo.inferir([np.full((30, 30, 3), 5, np.uint8)])
+    assert saida == [{"deteccoes": []}]
+    assert chamadas[0]["imgsz"] == [64, 96] and chamadas[0]["imagens"][0].shape == (64, 96, 3)
+
+
+def test_executor_recusa_formato_nao_suportado_com_mensagem_explicita(tmp_path: Path, inst: Instalador, monkeypatch) -> None:
+    from src.jutta_ped.especialistas.backend_ultralytics import BackendUltralytics
+
+    _yolo_falso(monkeypatch)
+    m = manifesto_bebe()
+    m["entrada"]["formato"]["normalizacao"] = "0-255"
+    instalar_ativar(inst, tmp_path, m, b"pesos-a")
+    r = Executor(inst, backends={"pt": BackendUltralytics()}).executar("br.teste.bebe", [pedido(1)])[0]
+    assert r["erro"]["codigo"] == E_MODELO and "formato de entrada nao suportado" in r["erro"]["mensagem"] and "0-255" in r["erro"]["mensagem"]

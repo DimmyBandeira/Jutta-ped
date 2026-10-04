@@ -574,14 +574,35 @@ Comportamento (obrigações cumpridas pelo executor):
    só para `openvino`; `cpu` sempre por último) e usa o primeiro que carregar; `info(id)` informa o escolhido.
 3. **Classes:** confere ao carregar que as classes usadas pelos atributos existem no modelo (fecha a lacuna "classes de `.pt` não
    verificadas" do validador estático): `E_MODELO_INDISPONIVEL` com a lista de classes do modelo.
-4. **Pedido:** `fonte` diferente da exigida ou recorte ausente/vazio/não imagem → `E_RECORTE_INVALIDO`; `restante_ms` esgotado
-   ou menor que `custo.ms_por_recorte` → `E_PRAZO_ESGOTADO` sem processar; `altura_pessoa_px` menor que `altura_minima_px` → todos os
-   atributos `indeterminado/recorte_pequeno` sem chamar o modelo; processamento em lotes de até `lote_max`.
+4. **Pedido:** `fonte` diferente da exigida, recorte ausente/vazio/não imagem, `dtype` diferente de `uint8` ou canais fora de
+   1, 3 ou 4 → `E_RECORTE_INVALIDO`; `altura_pessoa_px` menor que `altura_minima_px` → todos os atributos
+   `indeterminado/recorte_pequeno` sem chamar o modelo; processamento em lotes de até `lote_max`.
+   **Prazo** (independe de `custo` ser declarado): o orçamento de cada pedido é consumido pelo tempo já gasto na chamada (carga,
+   lotes anteriores). Antes de cada lote, o pedido vencido — ou, com `custo` declarado, com `restante_ms` menor que ele — recebe
+   `E_PRAZO_ESGOTADO` sem processar. Depois da inferência, o pedido cujo tempo acabou *durante* o lote também recebe
+   `E_PRAZO_ESGOTADO` ("resultado vencido") e **nenhum atributo é entregue**: um resultado fora do prazo nunca sai como `ok`.
 5. **Parâmetros:** efetivos = padrão do manifesto + os do pedido, validados contra `[min, max]`; `limiar_ausente` ≤ `limiar_presente`
    é verificado **com os valores efetivos** (dever do host, seção 12.4). `config_hash` do pedido, se enviado, deve igualar o calculado
    por `calcular_config_hash(hashes_dos_pesos, parametros_efetivos)`, senão `E_VERSAO_INCOMPATIVEL`.
 6. **Atributos:** exatamente a tabela da seção 12.3; indeterminado nunca é "não".
 
 Formatos executáveis: `pt` e `openvino` (Ultralytics, detecção e classificação). **`onnx` ainda não** (`E_MODELO_INDISPONIVEL`;
-não há `onnxruntime` no ambiente). O pré-processamento é o do Ultralytics; de `entrada.formato` o backend usa só
-`largura`/`altura` (`imgsz`). Com `cor`/`normalizacao` outros backends precisarão aplicá-las.
+não há `onnxruntime` no ambiente).
+
+**Pré-processamento (backend Ultralytics): aplica o `entrada.formato` declarado ou recusa a combinação** — nada é ignorado em
+silêncio. Recusa = `E_MODELO_INDISPONIVEL` com "formato de entrada nao suportado" e a razão, ao carregar.
+
+| Campo | Comportamento |
+|---|---|
+| `redimensionamento` `esticar` | redimensiona para `largura`×`altura` sem manter a proporção |
+| `redimensionamento` `letterbox` | mantém a proporção e preenche com 114, centralizado, até `largura`×`altura` (qualquer forma, inclusive não quadrada) |
+| `cor` `RGB` | o modelo recebe RGB (o Ultralytics converte BGR→RGB) |
+| `cor` `BGR` | os canais são trocados antes, de modo que o modelo receba BGR |
+| `cor` `GRAY` | **recusado** (modelos de 1 canal) |
+| `normalizacao` `0-1` | suportado (o Ultralytics divide por 255) |
+| `normalizacao` `0-255` | **recusado** |
+| classificação | exige `largura` = `altura` |
+| OpenVINO | `imgsz` do `metadata.yaml`, se houver, deve igualar o declarado (forma exportada é fixa) |
+| tarefas | só `detect` e `classify` (segmentação, pose e obb: recusadas) |
+
+A imagem chega ao Ultralytics já no tamanho declarado; no `.pt` ele só a completa até múltiplo do stride.

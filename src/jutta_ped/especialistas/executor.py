@@ -11,7 +11,8 @@ Ciclo de vida:
   a conferencia falhar).
 * Cada pedido tem resultado proprio, na mesma ordem; erro de um pedido nao derruba os outros.
 
-Backends: `pt` e `openvino` via Ultralytics. `onnx` ainda nao e executavel (E_MODELO_INDISPONIVEL).
+Backends: `pt` e `openvino` via Ultralytics, que aplicam o `entrada.formato` declarado ou RECUSAM a combinacao
+(`FormatoNaoSuportado` -> E_MODELO_INDISPONIVEL); `onnx` ainda nao e executavel.
 """
 from __future__ import annotations
 
@@ -38,6 +39,10 @@ E_PARAMETRO = "E_PARAMETRO_INVALIDO"
 E_INTERNO = "E_INTERNO"
 
 
+class FormatoNaoSuportado(Exception):
+    """O backend nao consegue honrar o `entrada.formato` declarado: recusa explicitamente (nao ignora campos)."""
+
+
 class ErroExecucao(Exception):
     def __init__(self, codigo: str, mensagem: str) -> None:
         super().__init__(mensagem)
@@ -52,7 +57,7 @@ class ModeloCarregado(Protocol):
 
 
 class Backend(Protocol):
-    def carregar(self, modelo: dict[str, Any], pasta: Path, dispositivo: str, imgsz: int) -> ModeloCarregado: ...
+    def carregar(self, modelo: dict[str, Any], pasta: Path, dispositivo: str, formato: dict[str, Any]) -> ModeloCarregado: ...
 
 
 @dataclass
@@ -139,7 +144,7 @@ class Executor:
 
     def _carregar(self, ativo) -> EspecialistaCarregado:
         manifesto = json.loads((ativo.pasta / "manifest.json").read_text(encoding="utf-8"))
-        imgsz = max(manifesto["entrada"]["formato"]["largura"], manifesto["entrada"]["formato"]["altura"])
+        formato = manifesto["entrada"]["formato"]
         modelos: dict[str, ModeloCarregado] = {}
         for m in manifesto["modelos"]:
             backend = self._backend(m["formato"])
@@ -147,8 +152,10 @@ class Executor:
             carregado = None
             for dispositivo in self._candidatos(m):
                 try:
-                    carregado = backend.carregar(m, ativo.pasta, dispositivo, imgsz)
+                    carregado = backend.carregar(m, ativo.pasta, dispositivo, formato)
                     break
+                except FormatoNaoSuportado as exc:       # independe do dispositivo: nao adianta tentar outro
+                    raise ErroExecucao(E_MODELO, f"formato de entrada nao suportado por este executor: {exc}") from None
                 except Exception as exc:  # noqa: BLE001 -- tenta o proximo dispositivo declarado
                     falhas.append(f"{dispositivo}: {type(exc).__name__}: {exc}")
             if carregado is None:
@@ -239,14 +246,20 @@ class Executor:
 
         lote_max = entrada.get("lote_max", 1)
         for ini in range(0, len(a_processar), lote_max):
-            indices = a_processar[ini:ini + lote_max]
-            restante_min = min((pedidos[i].restante_ms - (time.perf_counter() - t0) * 1000.0 for i in indices if pedidos[i].restante_ms is not None), default=None)
-            if custo is not None and restante_min is not None and restante_min < custo:
-                for i in indices:
-                    resultados[i] = self._erro(pedidos[i], pid, esp.versao, E_PRAZO, "restante_ms nao comporta o custo declarado do especialista")
+            # Prazo ANTES do lote, pedido a pedido: o orcamento de cada um e consumido pelo tempo ja gasto (carga, lotes
+            # anteriores). Vencido -> nao processa. Com `custo` declarado, tambem exige que o restante o comporte.
+            agora_ms = (time.perf_counter() - t0) * 1000.0
+            indices = []
+            for i in a_processar[ini:ini + lote_max]:
+                restante = None if pedidos[i].restante_ms is None else pedidos[i].restante_ms - agora_ms
+                if restante is not None and (restante <= 0 or (custo is not None and restante < custo)):
+                    resultados[i] = self._erro(pedidos[i], pid, esp.versao, E_PRAZO, "orcamento vencido ou insuficiente antes de processar o lote")
+                else:
+                    indices.append(i)
+            if not indices:
                 continue
             imagens = [pedidos[i].recorte for i in indices]
-            fila_ms = (time.perf_counter() - t0) * 1000.0
+            fila_ms = agora_ms
             t1 = time.perf_counter()
             try:
                 saidas = {mid: m.inferir(imagens) for mid, m in esp.modelos.items() if self._usa_modelo(esp.manifesto, mid)}
@@ -254,8 +267,14 @@ class Executor:
                 for i in indices:
                     resultados[i] = self._erro(pedidos[i], pid, esp.versao, E_INTERNO, f"falha na inferencia: {type(exc).__name__}: {exc}")
                 continue
+            fim_ms = (time.perf_counter() - t0) * 1000.0
             inferencia_ms = (time.perf_counter() - t1) * 1000.0 / len(indices)
             for k, i in enumerate(indices):
+                if pedidos[i].restante_ms is not None and fim_ms > pedidos[i].restante_ms:
+                    # Resultado VENCIDO: o tempo acabou durante a inferencia. Nao e entregue como valido (o host o
+                    # descartaria; aqui garantimos que nunca saia como `ok`).
+                    resultados[i] = self._erro(pedidos[i], pid, esp.versao, E_PRAZO, f"resultado vencido: concluido em {fim_ms:.0f} ms com orcamento de {pedidos[i].restante_ms:.0f} ms")
+                    continue
                 por_modelo = {mid: s[k] for mid, s in saidas.items()}
                 resultados[i] = self._resultado(pedidos[i], esp, self._atributos(esp.manifesto, por_modelo, params_por_pedido[i]), fila_ms, inferencia_ms)
         return [r for r in resultados if r is not None]
@@ -272,6 +291,10 @@ class Executor:
         r = p.recorte
         if not hasattr(r, "shape") or getattr(r, "ndim", 0) not in (2, 3) or getattr(r, "size", 0) == 0:
             return self._erro(p, esp.id, esp.versao, E_RECORTE, "recorte ausente, vazio ou nao e uma imagem")
+        if str(getattr(r, "dtype", "")) != "uint8":
+            return self._erro(p, esp.id, esp.versao, E_RECORTE, "o recorte deve ser uint8 (BGR, como o OpenCV)")
+        if r.ndim == 3 and r.shape[2] not in (1, 3, 4):
+            return self._erro(p, esp.id, esp.versao, E_RECORTE, "o recorte deve ter 1, 3 ou 4 canais")
         if p.restante_ms is not None and p.restante_ms - (time.perf_counter() - t0) * 1000.0 <= 0:
             return self._erro(p, esp.id, esp.versao, E_PRAZO, "orcamento (restante_ms) esgotado antes de processar")
         return None
