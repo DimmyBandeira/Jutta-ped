@@ -374,6 +374,20 @@ class Instalador:
     def listar(self) -> dict[str, Any]:
         return self._ler_registro()["especialistas"]
 
+    def operacoes_recentes(self, n: int = 20) -> list[dict[str, Any]]:
+        """Ultimas `n` linhas da trilha de auditoria local (mais recente primeiro). Nunca levanta."""
+        try:
+            linhas = self.arq_log.read_text(encoding="utf-8").splitlines()[-n:]
+        except OSError:
+            return []
+        saida = []
+        for linha in reversed(linhas):
+            try:
+                saida.append(json.loads(linha))
+            except ValueError:
+                continue
+        return saida
+
     def caminho_ativo(self, pid: str) -> Path | None:
         """Pasta da versao ativa, ou None. E o que o host (executor) deve usar."""
         esp = self._ler_registro()["especialistas"].get(pid)

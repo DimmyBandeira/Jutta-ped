@@ -132,7 +132,7 @@ def test_login_invalido_mostra_erro_e_valido_abre_o_monitoramento(nav, servidor)
 def test_menu_do_admin_e_navegacao_para_cameras(nav, servidor):
     nav.entrar(servidor.url)
     links = nav.js("Array.from(document.querySelectorAll('nav a')).map(a => a.textContent.trim())")
-    assert links == ["Monitoramento", "Câmeras", "Relatório", "Destinos", "Configurações", "Usuários"]
+    assert links == ["Monitoramento", "Câmeras", "Relatório", "Destinos", "Especialistas", "Configurações", "Usuários"]
     assert nav.abrir(f"{servidor.url}/painel/cameras")
     assert "Demo" in nav.js("document.body.innerText")
     # colunas alinhadas: cada celula cai sob o cabecalho certo

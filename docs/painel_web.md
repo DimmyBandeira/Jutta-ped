@@ -452,3 +452,30 @@ que chega depois do Pause não redesenha mais as caixas.
 
 **Efeito colateral a conhecer:** se a IA for mais lenta que o stream, ela agora pula frames (antes processava todos, mas cada vez mais
 atrasada). As regras de companhia/identidade operam por frame processado; vale validar com cenas rápidas.
+
+
+## 20. Especialistas (administração)
+
+Tela `/painel/especialistas` (**somente administrador**; item "Especialistas" no menu). Instala, ativa, reverte e remove
+pacotes declarativos de especialista. Contrato do pacote e do instalador: [manual do especialista](manual_especialista.md)
+(seções 12 e 13). O painel **não** lê nem escreve o registro de instalação: tudo passa pelo serviço `Instalador`
+(`app.state.especialistas`, armazenamento em `runtime/especialistas/`).
+
+| Rota | Efeito |
+|---|---|
+| `GET /painel/especialistas` | Lista especialistas, versões, estado, versão ativa e operações recentes |
+| `POST /painel/especialistas/instalar` | Upload `.zip` (campo `pacote`): valida, extrai isolado e registra; fica **inativo** |
+| `POST /painel/especialistas/{id}/{versao}/ativar` | Confere integridade e torna a versão ativa |
+| `POST /painel/especialistas/{id}/reverter` | Volta à última versão anterior válida |
+| `POST /painel/especialistas/{id}/{versao}/remover` | Remove uma versão inativa |
+| `POST /painel/especialistas/recuperar` | Conclui ou desfaz operações interrompidas |
+
+Segurança: token CSRF obrigatório em todo POST (formulário comum, campo `csrf_token`); o `Content-Length` acima do teto
+(600 MiB, `app.state.especialistas_upload_max`) é recusado com 413 antes de ler o corpo; o nome do arquivo enviado nunca é
+usado como caminho (o upload vai para `uploads/<uuid>.zip` e é apagado ao final); texto vindo do pacote é escapado na
+tela. Toda ação grava auditoria (`especialista_instalado`, `_instalacao_recusada`, `_ativado`, `_revertido`, `_removido`,
+`especialistas_recuperados`, e `*_falhou`). Pacote reprovado devolve 422 com a tabela de problemas do validador; operação
+concorrente devolve 409.
+
+**O que a tela NÃO faz:** ativar uma versão apenas a registra como vigente; o motor de análise ainda não consome
+especialistas. A validação é estática (não carrega nem aprova o modelo). Receitas e vínculo com câmeras não existem ainda.

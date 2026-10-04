@@ -16,7 +16,16 @@ from starlette.middleware.sessions import SessionMiddleware
 
 import httpx
 
-from src.jutta_ped.painel import routes_alertas, routes_auth, routes_cameras, routes_config, routes_monitor, routes_usuarios
+from src.jutta_ped.painel import (
+    routes_alertas,
+    routes_auth,
+    routes_cameras,
+    routes_config,
+    routes_especialistas,
+    routes_monitor,
+    routes_usuarios,
+)
+from src.jutta_ped.especialistas.instalador import Instalador
 from src.jutta_ped.painel.config_service import ler_config
 from src.jutta_ped.painel.crypto import Cifra
 from src.jutta_ped.painel.db import Database
@@ -134,6 +143,7 @@ def mount_panel(
     servicos = montar_servicos(database, runtime_dir, manager=manager, config_factory=config_factory, go2rtc_transport=go2rtc_transport, popen=popen, evidence_roots=evidence_roots)
     app.state.painel = servicos
     app.state.painel_db = database
+    app.state.especialistas = Instalador(runtime_dir / "especialistas")
     app.state.painel_limitador = LimitadorLogin()
     app.add_middleware(
         SessionMiddleware,
@@ -177,6 +187,7 @@ def mount_panel(
     app.include_router(routes_usuarios.router)
     app.include_router(routes_cameras.router)
     app.include_router(routes_config.router)
+    app.include_router(routes_especialistas.router)
     app.include_router(routes_monitor.router)
     app.include_router(routes_alertas.router)
     app.include_router(_placeholders)

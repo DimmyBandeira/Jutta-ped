@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Especialistas — Jutta Ped{% endblock %}
+{% block content %}
+<h3 style="margin-top:0">Especialistas</h3>
+<p class="aviso">Pacotes declarativos (manifesto + pesos) que fornecem atributos ao motor de análise. A validação aqui é
+<strong>estática</strong>: confere estrutura, arquivos e hashes; <strong>não</strong> carrega nem aprova o modelo para execução.
+Ativar uma versão a torna a vigente no registro; o motor de análise ainda não a consome.</p>
+
+{% if flash %}<div class="badge {{ 'online' if flash.tipo == 'ok' else 'offline' }}" style="display:block; margin-bottom:1rem">{{ flash.texto }}</div>{% endif %}
+{% if registro_erro %}
+<div class="badge offline" style="display:block; margin-bottom:1rem">{{ registro_erro }}</div>
+{% endif %}
+{% if erro %}
+<div class="badge offline" style="display:block; margin-bottom:.6rem">{{ erro }}</div>
+{% if problemas %}
+<table style="margin-bottom:1rem">
+  <thead><tr><th>Categoria</th><th>Código</th><th>Onde</th><th>Detalhe</th></tr></thead>
+  <tbody>
+  {% for p in problemas %}
+    <tr><td>{{ p.categoria }}</td><td>{{ p.codigo }}</td><td>{{ p.caminho or '—' }}</td><td>{{ p.mensagem }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endif %}
+
+<form class="painel" method="post" action="/painel/especialistas/instalar" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="cartao">
+    <h4>Instalar pacote</h4>
+    <label>Arquivo .zip do especialista (até {{ upload_max_mib }} MiB)</label>
+    <input type="file" name="pacote" accept=".zip,application/zip" required>
+    <p class="aviso">O pacote é validado e extraído em área isolada; fica <strong>inativo</strong> até você ativar. Não pode conter código executável.</p>
+    <div class="rodape-form"><button class="btn primary" type="submit">Validar e instalar</button></div>
+  </div>
+</form>
+
+{% for e in itens %}
+<div class="cartao" style="margin:1rem 0">
+  <h4 style="margin:0 0 .3rem">{{ e.nome }} <span class="aviso" style="margin:0">{{ e.id }}</span></h4>
+  <p class="aviso" style="margin:.2rem 0 .6rem">Versão ativa:
+    {% if e.ativa %}<span class="badge online">{{ e.ativa }}</span>{% else %}<span class="badge neutro">nenhuma</span>{% endif %}
+  </p>
+  <table>
+    <thead><tr><th>Versão</th><th>Estado</th><th>Instalada em</th><th>Origem</th><th></th></tr></thead>
+    <tbody>
+    {% for v in e.versoes %}
+      <tr>
+        <td>{{ v.versao }}{% if v.versao == e.ativa %} <span class="badge online">ativa</span>{% endif %}</td>
+        <td>{% if v.estado == 'instalada' %}<span class="badge neutro">instalada</span>{% else %}<span class="badge offline">{{ v.estado }}</span>{% endif %}</td>
+        <td>{{ v.instalado_em }}</td>
+        <td>{{ v.origem }}</td>
+        <td style="text-align:right">
+          {% if v.estado == 'instalada' and v.versao != e.ativa %}
+          <form method="post" action="/painel/especialistas/{{ e.id }}/{{ v.versao }}/ativar" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn" type="submit">Ativar</button></form>
+          {% endif %}
+          {% if v.versao != e.ativa %}
+          <form method="post" action="/painel/especialistas/{{ e.id }}/{{ v.versao }}/remover" style="display:inline"
+                onsubmit="return confirm('Remover {{ e.id }} {{ v.versao }}? Os arquivos instalados serão apagados.')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn perigo" type="submit">Remover</button></form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if e.tem_anterior %}
+  <form method="post" action="/painel/especialistas/{{ e.id }}/reverter" style="margin-top:.6rem"
+        onsubmit="return confirm('Voltar {{ e.id }} para a versão anterior válida?')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn" type="submit">Voltar à versão anterior</button></form>
+  {% endif %}
+</div>
+{% else %}
+{% if not registro_erro %}<p class="aviso">Nenhum especialista instalado.</p>{% endif %}
+{% endfor %}
+
+<div class="cartao" style="margin:1rem 0">
+  <h4>Manutenção</h4>
+  <p class="aviso">Conclui ou desfaz instalações interrompidas (queda do servidor, falha de disco) e isola pastas sem registro.</p>
+  <form method="post" action="/painel/especialistas/recuperar">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn" type="submit">Executar recuperação</button></form>
+</div>
+
+<div class="cartao" style="margin:1rem 0">
+  <h4>Operações recentes</h4>
+  {% if operacoes %}
+  <table>
+    <thead><tr><th>Quando</th><th>Operação</th><th>Detalhe</th></tr></thead>
+    <tbody>
+    {% for o in operacoes %}
+      <tr><td>{{ o.ts }}</td><td>{{ o.op }}</td><td>{{ o.id or '' }}{% if o.versao %} {{ o.versao }}{% endif %}{% if o.slug %} · {{ o.slug }}{% endif %}{% if o.acao %}{{ o.acao }}{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="aviso">Sem operações registradas.</p>{% endif %}
+</div>
+{% endblock %}
