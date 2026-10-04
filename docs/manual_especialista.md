@@ -497,3 +497,44 @@ Não cabem no `protocolo: 1` e o validador não os aceita: **pose estruturada** 
 derivados** de outros atributos ou de vários modelos, **térmico/fusão de duas fontes** (o valor
 `entrada.fonte: termica` é aceito apenas como fonte única de um recorte, sem calibração nem fusão), pacotes
 com código, pacotes de terceiros. Cada um depende de decisão própria e de revisão do contrato.
+
+## 13. Instalação local (implementada; sem painel)
+
+`src/jutta_ped/especialistas/instalador.py`. Estado em arquivos sob `--raiz` (padrão
+`runtime/especialistas/`, ignorada pelo git): `registro.json` (+`.bak`), `pacotes/<id>/<versão>/`,
+`staging/`, `pendentes/`, `quarentena/`, `operacoes.jsonl`, `.lock`.
+
+```
+python -m src.jutta_ped.especialistas instalar <pasta-ou-zip>      # valida, extrai isolado, registra (fica INATIVO)
+python -m src.jutta_ped.especialistas ativar <id> <versao>         # confere integridade e torna ativa
+python -m src.jutta_ped.especialistas reverter <id>                # volta à última versão anterior válida
+python -m src.jutta_ped.especialistas remover <id> <versao>        # só versão inativa
+python -m src.jutta_ped.especialistas listar | recuperar           # estado | concluir/desfazer operações interrompidas
+```
+
+Regras (obrigações do instalador):
+
+1. **Só entra o que o validador aprovou antes e depois da extração**, com os mesmos hashes. Reprovado: nada é
+   gravado.
+2. **Extração isolada:** em `staging/<token>/`, sem sobrescrever, só dentro do destino, com os limites da
+   seção 12.6 reaplicados sobre os bytes realmente escritos. Depois uma troca atômica de pasta para
+   `pacotes/` e gravação atômica do registro (arquivo temporário + `replace`, com cópia `.bak`).
+3. **Versão imutável:** mesmo `id`+`versão` com os mesmos pesos é idempotente; com pesos diferentes é recusado
+   (`versao_imutavel`). Para mudar pesos, publique outra versão.
+4. **Recuperação após queda** (`recuperar`, também executada antes de cada instalação): descarta `staging`;
+   instalação interrompida depois de mover mas antes de registrar é **concluída** se o conteúdo ainda confere,
+   ou vai para `quarentena/`; diretório fora do registro vai para `quarentena/` (nunca é apagado); versão
+   registrada sem arquivos fica `ausente`, e se era a ativa volta à última válida do histórico; registro
+   ilegível usa o `.bak` e, se ambos falharem, é reconstruído a partir de `pacotes/` (sem versão ativa).
+5. **Ativação** confere a integridade na hora (hashes dos pesos); falhou: a versão fica `corrompida` e a ativa
+   não muda. O histórico guarda as últimas 10 ativações. **Reverter** pula versões anteriores corrompidas e
+   mantém a versão atual instalada, inativa.
+6. **Exclusão mútua** por `.lock` (pid); lock de processo morto é ignorado.
+
+Códigos de saída da CLI de instalação: `0` ok · `1` uso/E-S · `10` reprovado pelo validador · `11` conflito de
+versão/destino · `12` operação em andamento · `13` falha de E/S · `14` integridade · `15` estado (versão
+inexistente, sem anterior válida, registro ilegível) · `16` versão em uso.
+
+**Limites desta entrega:** não carrega modelos nem executa nada do pacote; não integra o painel (upload e
+telas); não vincula receitas; não autentica autoria; o host consulta `caminho_ativo(id)` para saber qual pasta
+usar. Quando houver banco para o registro (painel), este arquivo passa a ser fonte de reconciliação.

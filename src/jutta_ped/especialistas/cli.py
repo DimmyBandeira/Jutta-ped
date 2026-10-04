@@ -2,6 +2,9 @@
 
     python -m src.jutta_ped.especialistas validar <pasta-ou-zip> [--formato texto|json] [--host-protocolo 1]
     python -m src.jutta_ped.especialistas hash <arquivo-ou-pasta>
+    python -m src.jutta_ped.especialistas instalar <pasta-ou-zip> [--raiz runtime/especialistas]
+    python -m src.jutta_ped.especialistas ativar <id> <versao> | reverter <id> | remover <id> <versao>
+    python -m src.jutta_ped.especialistas listar | recuperar
 """
 from __future__ import annotations
 
@@ -12,6 +15,7 @@ from pathlib import Path
 
 from src.jutta_ped.especialistas.fontes import ErroPacote, Limites, PastaFonte
 from src.jutta_ped.especialistas.hashing import hash_pasta, sha256_blocos
+from src.jutta_ped.especialistas.instalador import RAIZ_PADRAO, ErroInstalacao, Instalador
 from src.jutta_ped.especialistas.validador import NOMES_CATEGORIA, Relatorio, validar
 
 RODAPE_ESCOPO = (
@@ -84,6 +88,35 @@ def _cmd_hash(args: argparse.Namespace) -> int:
     return 0
 
 
+def _instalacao(args: argparse.Namespace) -> int:
+    inst = Instalador(args.raiz)
+    try:
+        if args.comando == "instalar":
+            r = inst.instalar(args.caminho)
+            print(f"{'ja instalado' if r.ja_instalado else 'instalado'}: {r.id} {r.versao} (inativo; use 'ativar') em {r.caminho}")
+        elif args.comando == "ativar":
+            print(f"ativa: {args.id} {inst.ativar(args.id, args.versao)}")
+        elif args.comando == "reverter":
+            print(f"revertido para: {args.id} {inst.reverter(args.id)}")
+        elif args.comando == "remover":
+            inst.remover(args.id, args.versao)
+            print(f"removido: {args.id} {args.versao}")
+        elif args.comando == "listar":
+            print(json.dumps(inst.listar(), ensure_ascii=False, indent=2, sort_keys=True))
+        elif args.comando == "recuperar":
+            acoes = inst.recuperar()
+            print(chr(10).join(acoes) if acoes else "nada a recuperar")
+    except ErroInstalacao as exc:
+        print(f"erro ({exc.slug}): {exc.mensagem}", file=sys.stderr)
+        if exc.relatorio is not None:
+            print(formatar_texto(exc.relatorio), file=sys.stderr)
+        return exc.codigo
+    except OSError as exc:
+        print(f"erro de E/S: {exc}", file=sys.stderr)
+        return 13
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m src.jutta_ped.especialistas", description="Ferramentas de pacotes de especialista (protocolo 1).")
     sub = ap.add_subparsers(dest="comando", required=True)
@@ -95,5 +128,18 @@ def main(argv: list[str] | None = None) -> int:
     h = sub.add_parser("hash", help="SHA-256 de um arquivo, ou hash canonico (jutta-dir-v1) de uma pasta OpenVINO")
     h.add_argument("caminho")
     h.set_defaults(func=_cmd_hash)
+    for nome, ajuda, posicionais in (
+        ("instalar", "valida, extrai de forma isolada e registra (fica inativo)", ["caminho"]),
+        ("ativar", "torna uma versao instalada a ativa (confere integridade)", ["id", "versao"]),
+        ("reverter", "volta para a versao anterior valida", ["id"]),
+        ("remover", "remove uma versao inativa", ["id", "versao"]),
+        ("listar", "mostra o registro de instalacao", []),
+        ("recuperar", "conclui ou desfaz operacoes interrompidas", []),
+    ):
+        sp = sub.add_parser(nome, help=ajuda)
+        for p in posicionais:
+            sp.add_argument(p)
+        sp.add_argument("--raiz", default=str(RAIZ_PADRAO), help="armazenamento (padrao runtime/especialistas)")
+        sp.set_defaults(func=_instalacao)
     args = ap.parse_args(argv)
     return args.func(args)
