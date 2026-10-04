@@ -38,10 +38,28 @@ class Database:
 
         self.session_factory = sessionmaker(self.engine, expire_on_commit=False)
 
-    def create_all(self) -> None:
-        from src.jutta_ped.painel import models  # noqa: F401  (registra as tabelas)
+    def migrar(self) -> None:
+        """Leva o banco ao esquema atual com o Alembic.
 
-        Base.metadata.create_all(self.engine)
+        Banco vazio: aplica todas as revisoes. Banco legado criado por `create_all` (tabelas sem
+        `alembic_version`): marca a revisao base como aplicada e segue dali, sem recriar nada.
+        """
+        from alembic import command
+        from alembic.config import Config
+        from sqlalchemy import inspect
+
+        cfg = Config()
+        cfg.set_main_option("script_location", str(Path(__file__).parent / "migracoes"))
+        with self.engine.begin() as con:
+            cfg.attributes["connection"] = con
+            tabelas = set(inspect(con).get_table_names())
+            if "alembic_version" not in tabelas and "usuarios" in tabelas:
+                command.stamp(cfg, "0001")
+            command.upgrade(cfg, "head")
+
+    def create_all(self) -> None:
+        """Compatibilidade: antes criava as tabelas direto do metadata; agora aplica as migracoes."""
+        self.migrar()
 
     @contextmanager
     def session(self) -> Iterator[Session]:

@@ -101,6 +101,10 @@ class Camera(Base):
     go2rtc_sync: Mapped[str] = mapped_column(String(16), default="pendente")  # ok | pendente | erro
     go2rtc_sync_erro: Mapped[str | None] = mapped_column(String(200), nullable=True)
     go2rtc_sync_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Segunda fonte (camera bi-espectral): o stream termico fica na mesma camera; usado so por receitas termicas.
+    termica_canal: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    termica_rtsp_url_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    termica_stream_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     destinos: Mapped[list[CameraDestino]] = relationship(cascade="all, delete-orphan", lazy="selectin")
 
@@ -128,6 +132,13 @@ class EventoPediatria(Base):
     confianca: Mapped[float | None] = mapped_column(Float, nullable=True)
     motivo: Mapped[str | None] = mapped_column(String(200), nullable=True)
     suprimido: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    # Esquema generico de alertas (o motor de analise emite outros tipos alem de pediatria).
+    plugin: Mapped[str] = mapped_column(String(32), default="pediatria", server_default="pediatria")
+    tipo: Mapped[str] = mapped_column(String(48), default="crianca_desacompanhada", server_default="crianca_desacompanhada")
+    severidade: Mapped[str] = mapped_column(String(16), default="alta", server_default="alta")  # baixa|media|alta|critica
+    status: Mapped[str] = mapped_column(String(16), default="novo", server_default="novo", index=True)  # novo|reconhecido|resolvido|descartado
+    receita_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    receita_versao: Mapped[int | None] = mapped_column(Integer, nullable=True)
     evidencias_json: Mapped[str] = mapped_column(Text, default="{}")
     criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
     reconhecido_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

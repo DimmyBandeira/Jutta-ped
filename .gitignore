@@ -12,3 +12,4 @@ videos/
 build/
 dist/
 release/
+.cartographer/

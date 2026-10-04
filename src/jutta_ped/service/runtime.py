@@ -19,6 +19,9 @@ import cv2
 
 from modulo.pediatria.detector_mvp import PediatricDetection, PediatricsDetectorMvpRunner
 from modulo.pediatria.model_registry_service import resolve_default_model_path
+from modulo.pediatria.companionship import CompanionshipAnalyzer
+from modulo.pediatria.config import CompanionshipConfig
+from src.jutta_ped.service.placement import Placement, resolve_placement
 from src.jutta_ped.service.pediatria_service import (
     PediatriaService,
     PediatriaServiceConfig,
@@ -367,6 +370,11 @@ class SessionStartConfig:
     # contados em `suppressed_count`, mas evidencia/evento saem no maximo 1x por este intervalo
     # (por estado+track). 0 = comportamento antigo (um evento por frame).
     suppressed_evidence_interval_seconds: float = 10.0
+    # Taxa alvo de analise (frames/s) para fontes ao vivo ('network'/'device'): o laco espera o resto do
+    # periodo e le sempre o frame MAIS RECENTE, entao 8 cameras nao disputam CPU a 15-30 fps sem necessidade.
+    # Os tempos do analisador de companhia (segundos) sao convertidos por esta taxa. 0 = sem limite.
+    # Fontes 'file' (analise offline, testes) nunca sao limitadas.
+    analysis_fps: float = 5.0
 
 
 @dataclass
@@ -411,6 +419,10 @@ class SimpleAlertLatch:
 
 
 class PediatriaHeadlessSession:
+    # Defaults de classe: sessoes montadas sem __init__ (testes) seguem sem limite de fps e sem placement.
+    _analysis_fps: float = 0.0
+    placement: Placement | None = None
+
     def __init__(self, config: SessionStartConfig) -> None:
         self.config = config
         self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:6]
@@ -431,12 +443,20 @@ class PediatriaHeadlessSession:
         # plugin/schemas/overlay.schema.json). So o frame mais recente e
         # mantido em memoria -- sem historico, sem custo de disco extra.
         self.last_overlay_frame: dict[str, Any] | None = None
-        self.device, self.device_reason = resolve_device(config.force_cpu, config.requested_device)
+        self.placement = resolve_placement(
+            force_cpu=config.force_cpu,
+            requested=config.requested_device,
+            person_model_path=DEFAULT_PERSON_MODEL_PATH,
+            specialist_model_path=DEFAULT_MODEL_PATH,
+        )
+        self.device, self.device_reason = self.placement.device, self.placement.reason
         perf_overrides = cpu_economical_overrides(self.device)
+        self._source_kind = classify_source_kind(config.source)
+        self._analysis_fps = max(0.0, float(config.analysis_fps)) if self._source_kind in {"network", "device"} else 0.0
         self.service = PediatriaService(
             PediatriaServiceConfig(
-                specialist_model_path=DEFAULT_MODEL_PATH,
-                person_model_path=DEFAULT_PERSON_MODEL_PATH,
+                specialist_model_path=self.placement.specialist_model_path,
+                person_model_path=self.placement.person_model_path,
                 device=self.device,
                 detector_stride_frames=perf_overrides["detector_stride_frames"] or 1,
                 specialist_budget_per_frame=perf_overrides["specialist_budget_per_frame"],
@@ -445,9 +465,9 @@ class PediatriaHeadlessSession:
             crop_pipeline_factory=_load_person_crop_pipeline,
             identity_stabilizer_factory=_load_identity_stabilizer,
             weak_child_promoter_factory=_load_weak_child_promoter,
+            **self._analyzer_kwargs(),
         )
         self.capture: Any | None = None
-        self._source_kind = classify_source_kind(config.source)
         self.thread: threading.Thread | None = None
         self.stop_event = threading.Event()
         self.lock = threading.Lock()
@@ -461,6 +481,17 @@ class PediatriaHeadlessSession:
         self.latch = SimpleAlertLatch(config.cooldown_seconds)
         self.telemetry = SessionTelemetry()
 
+    def _analyzer_kwargs(self) -> dict[str, Any]:
+        if self._analysis_fps <= 0:
+            return {}
+        fps = self._analysis_fps
+        return {"analyzer_factory": lambda: CompanionshipAnalyzer(CompanionshipConfig.from_seconds(fps))}
+
+    def set_analysis_fps(self, fps: float) -> None:
+        """Ajusta a taxa de analise a quente (usado pelo governador de carga). So vale para fontes ao vivo."""
+        if self._source_kind in {"network", "device"}:
+            self._analysis_fps = max(0.0, float(fps))
+
     def start(self) -> None:
         self.evidence_dir.mkdir(parents=True, exist_ok=True)
         self.service.start_session()
@@ -468,7 +499,7 @@ class PediatriaHeadlessSession:
         if not self.capture.isOpened():
             raise OSError("Nao foi possivel abrir a fonte selecionada.")
         self.state.status = "running"
-        self._append_session_log({"event_type": "analysis_started", "source": self.camera_id, "requested_device": self.config.requested_device, "resolved_device": self.device, "device_reason": self.device_reason, "force_cpu": self.config.force_cpu, "modo_coleta": self.config.modo_coleta})
+        self._append_session_log({"event_type": "analysis_started", "source": self.camera_id, "requested_device": self.config.requested_device, "resolved_device": self.device, "backend": self.placement.backend if self.placement else None, "device_reason": self.device_reason, "force_cpu": self.config.force_cpu, "modo_coleta": self.config.modo_coleta})
         self.thread = threading.Thread(target=self._run_loop, name=f"pediatria-{self.session_id}", daemon=True)
         self.thread.start()
 
@@ -501,6 +532,10 @@ class PediatriaHeadlessSession:
                 self._process_frame(frame)
                 self.telemetry.capture_loop_ms.add((time.perf_counter() - loop_started) * 1000.0)
                 self.telemetry.sample_resources()
+                if self._analysis_fps > 0:
+                    resto = 1.0 / self._analysis_fps - (time.perf_counter() - loop_started)
+                    if resto > 0 and self.stop_event.wait(resto):
+                        break
         except Exception as exc:
             with self.lock:
                 self.state.last_error = str(exc)
@@ -743,6 +778,8 @@ class PediatriaHeadlessSession:
             "requested_device": self.config.requested_device,
             "resolved_device": self.device,
             "device_usado": self.device,
+            "backend": self.placement.backend if self.placement else None,
+            "analysis_fps_alvo": self._analysis_fps or None,
             "device_reason": self.device_reason,
             "force_cpu": self.config.force_cpu,
             "modo_coleta": self.config.modo_coleta,

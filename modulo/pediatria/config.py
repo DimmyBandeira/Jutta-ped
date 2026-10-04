@@ -84,6 +84,21 @@ class ChildScoreConfig:
 
 
 @dataclass(frozen=True)
+class CompanionshipTiming:
+    """Tempos do analisador de companhia em SEGUNDOS, independentes da taxa de analise.
+
+    Os defaults de `CompanionshipConfig` estao em frames (referencia ~15 fps: 1 s, 1 s, 1 s, 3 s). Com a
+    analise a 3-5 fps, frames fixos esticariam o tempo real de 3 a 5 vezes; por isso o runtime ao vivo
+    converte estes segundos pela taxa de analise efetiva (`CompanionshipConfig.from_seconds`).
+    """
+
+    relationship_confirmation_seconds: float = 1.0
+    state_persistence_seconds: float = 1.0
+    adult_occlusion_grace_seconds: float = 1.0
+    unbound_child_alone_grace_seconds: float = 3.0
+
+
+@dataclass(frozen=True)
 class CompanionshipConfig:
     """Parametros conservadores do analisador de companhia em shadow."""
 
@@ -94,3 +109,23 @@ class CompanionshipConfig:
     state_persistence_frames: int = 15
     adult_occlusion_grace_frames: int = 15
     unbound_child_alone_grace_frames: int = 45
+
+    @classmethod
+    def from_seconds(
+        cls,
+        analysis_fps: float,
+        timing: CompanionshipTiming | None = None,
+    ) -> "CompanionshipConfig":
+        """Converte tempos em segundos para frames na taxa de analise informada (minimo 1 frame)."""
+        t = timing or CompanionshipTiming()
+        fps = max(0.1, float(analysis_fps))
+
+        def frames(seconds: float) -> int:
+            return max(1, round(seconds * fps))
+
+        return cls(
+            relationship_confirmation_frames=frames(t.relationship_confirmation_seconds),
+            state_persistence_frames=frames(t.state_persistence_seconds),
+            adult_occlusion_grace_frames=frames(t.adult_occlusion_grace_seconds),
+            unbound_child_alone_grace_frames=frames(t.unbound_child_alone_grace_seconds),
+        )
