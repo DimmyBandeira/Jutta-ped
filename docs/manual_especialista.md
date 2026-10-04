@@ -262,7 +262,7 @@ host e nó NÃO precisam ter relógios sincronizados. Cada lado mede as duraçõ
 * `estado` do resultado: `ok` \| `erro` \| `recusado`. Em `erro`/`recusado`, `atributos` é vazio e
   `erro` traz `{codigo, mensagem}`.
 * Por atributo: `estado` = `definido` (com `valor`, e `confianca` quando houver) ou `indeterminado`
-  (com `motivo`: `recorte_pequeno`, `baixa_confianca`, `fora_do_campo`, `modelo_indisponivel`,
+  (com `motivo`: `recorte_pequeno`, `baixa_confianca`, `fora_do_campo`, `fora_da_faixa`, `modelo_indisponivel`,
   `prazo_esgotado`).
 * O resultado DEVE repetir `pedido_id`, `tentativa`, `geracao`, `trilha_id`, `quadro_id` e a identidade
   do especialista. Resultado sem eles é descartado.
@@ -277,6 +277,8 @@ host e nó NÃO precisam ter relógios sincronizados. Cada lado mede as duraçõ
 | `E_MODELO_INDISPONIVEL` | Modelo não carregou (memória, dispositivo). |
 | `E_PRAZO_ESGOTADO` | `restante_ms` já não comporta a execução; nada foi processado. |
 | `E_SOBRECARGA` | Executor sem capacidade agora; pode ser tentado em outro lugar. |
+| `E_INTEGRIDADE` | Os arquivos do pacote ativo não conferem com o registro (hashes/identidade). |
+| `E_PARAMETRO_INVALIDO` | Parâmetro desconhecido, fora de `[min, max]`, não numérico, ou limiares efetivos invertidos. |
 | `E_INTERNO` | Falha inesperada. |
 
 ### 4.4 Validade e o que o host faz com o resultado (obrigações do host)
@@ -437,7 +439,7 @@ Esta seção é **normativa para o validador**. O que conflitar com seções ant
 |---|---|---|---|---|---|
 | `tri` | `deteccao` | `maior_confianca` | `classes`, `limiar_presente`, `limiar_ausente` | `classe`, `faixa`, `categorias` | Sem detecção → `nao` |
 | `tri` | `classificacao` | `probabilidade` | `classe`, `limiar_presente`, `limiar_ausente` | `classes`, `faixa`, `categorias` | Probabilidade da classe |
-| `numero` | `deteccao` | `contagem` | `classes`, `faixa` `[0, N]` (N inteiro) | `classe`, `categorias`, limiares | |
+| `numero` | `deteccao` | `contagem` | `classes`, `faixa` `[0, N]` (N inteiro) | `classe`, `categorias`, limiares | Conta detecções com confiança ≥ 0,25; contagem acima de N → indeterminado `fora_da_faixa` |
 | `numero` | `deteccao` | `maior_confianca` | `classes`, `faixa` `[0, 1]` | `classe`, `categorias`, limiares | |
 | `numero` | `classificacao` | `probabilidade` | `classe`, `faixa` `[0, 1]` | `classes`, `categorias`, limiares | |
 | `categoria` | `classificacao` | `classe_mais_provavel` | `categorias` (≥ 2, únicas) | `classe`, `classes`, `faixa`, limiares | Categorias = nomes de classe |
@@ -547,3 +549,39 @@ inexistente, sem anterior válida, registro ilegível) · `16` versão em uso.
 **Limites desta entrega:** não carrega modelos nem executa nada do pacote; não integra o painel (upload e
 telas); não vincula receitas; não autentica autoria; o host consulta `caminho_ativo(id)` para saber qual pasta
 usar. Quando houver banco para o registro (painel), este arquivo passa a ser fonte de reconciliação.
+
+
+## 14. Executor local mínimo (implementado)
+
+`src/jutta_ped/especialistas/executor.py`. Usa um especialista **instalado e ativo** (via `Instalador.obter_ativo`),
+confere a integridade, carrega os modelos declarados e devolve atributos no formato da seção 4. **Não** liga alertas,
+regras, receitas, câmeras nem rede; **não** contém nada da pediatria (há um teste que analisa o código para garantir).
+
+```
+python -m src.jutta_ped.especialistas executar <id> <imagem> [--parametro nome=valor ...] [--altura PX]   # diagnóstico
+```
+
+Uso em código: `Executor(Instalador(raiz)).executar(id, [Pedido(...)]) -> [resultado, ...]` (mesma ordem; um resultado
+por pedido; erro de um pedido não afeta os outros).
+
+Comportamento (obrigações cumpridas pelo executor):
+
+1. **Resolução e integridade:** lê o registro a cada chamada (barato) e só recarrega quando a versão ativa ou a identidade do
+   pacote muda (ativar/reverter). A integridade completa (validador + hashes + identidade, seção 13) é conferida **ao
+   carregar**, falhando fechado (`E_INTEGRIDADE`, nada é carregado). Adulteração *depois* da carga só é vista na próxima
+   carga (`descarregar()` força a reconferência) — limite conhecido.
+2. **Dispositivo:** para cada modelo tenta os `dispositivos` declarados em ordem (`cuda` só para `pt` e com CUDA; `intel_gpu`
+   só para `openvino`; `cpu` sempre por último) e usa o primeiro que carregar; `info(id)` informa o escolhido.
+3. **Classes:** confere ao carregar que as classes usadas pelos atributos existem no modelo (fecha a lacuna "classes de `.pt` não
+   verificadas" do validador estático): `E_MODELO_INDISPONIVEL` com a lista de classes do modelo.
+4. **Pedido:** `fonte` diferente da exigida ou recorte ausente/vazio/não imagem → `E_RECORTE_INVALIDO`; `restante_ms` esgotado
+   ou menor que `custo.ms_por_recorte` → `E_PRAZO_ESGOTADO` sem processar; `altura_pessoa_px` menor que `altura_minima_px` → todos os
+   atributos `indeterminado/recorte_pequeno` sem chamar o modelo; processamento em lotes de até `lote_max`.
+5. **Parâmetros:** efetivos = padrão do manifesto + os do pedido, validados contra `[min, max]`; `limiar_ausente` ≤ `limiar_presente`
+   é verificado **com os valores efetivos** (dever do host, seção 12.4). `config_hash` do pedido, se enviado, deve igualar o calculado
+   por `calcular_config_hash(hashes_dos_pesos, parametros_efetivos)`, senão `E_VERSAO_INCOMPATIVEL`.
+6. **Atributos:** exatamente a tabela da seção 12.3; indeterminado nunca é "não".
+
+Formatos executáveis: `pt` e `openvino` (Ultralytics, detecção e classificação). **`onnx` ainda não** (`E_MODELO_INDISPONIVEL`;
+não há `onnxruntime` no ambiente). O pré-processamento é o do Ultralytics; de `entrada.formato` o backend usa só
+`largura`/`altura` (`imgsz`). Com `cor`/`normalizacao` outros backends precisarão aplicá-las.

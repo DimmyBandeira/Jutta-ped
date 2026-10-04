@@ -479,5 +479,5 @@ tela. Toda ação grava auditoria (`especialista_instalado`, `_instalacao_recusa
 `especialistas_recuperados`, e `*_falhou`). Pacote reprovado devolve 422 com a tabela de problemas do validador; operação
 concorrente devolve 409.
 
-**O que a tela NÃO faz:** ativar uma versão apenas a registra como vigente; o motor de análise ainda não consome
-especialistas. A validação é estática (não carrega nem aprova o modelo). Receitas e vínculo com câmeras não existem ainda.
+**O que a tela NÃO faz:** ativar uma versão apenas a registra como vigente. Já existe um executor local mínimo (manual do especialista,
+seção 14) que usa o especialista ativo, mas ele **não** está ligado ao motor de análise nem a alertas. A validação é estática (não carrega nem aprova o modelo). Receitas e vínculo com câmeras não existem ainda.

@@ -5,6 +5,7 @@
     python -m src.jutta_ped.especialistas instalar <pasta-ou-zip> [--raiz runtime/especialistas]
     python -m src.jutta_ped.especialistas ativar <id> <versao> | reverter <id> | remover <id> <versao>
     python -m src.jutta_ped.especialistas listar | recuperar
+    python -m src.jutta_ped.especialistas executar <id> <imagem> [--parametro nome=valor ...] [--altura PX]
 """
 from __future__ import annotations
 
@@ -117,6 +118,29 @@ def _instalacao(args: argparse.Namespace) -> int:
     return 0
 
 
+def _executar(args: argparse.Namespace) -> int:
+    import cv2
+
+    from src.jutta_ped.especialistas.executor import Executor, Pedido
+
+    imagem = cv2.imread(args.imagem)
+    if imagem is None:
+        print(f"erro: nao foi possivel ler a imagem '{args.imagem}'", file=sys.stderr)
+        return 1
+    params: dict[str, float] = {}
+    for item in args.parametro or []:
+        nome, _, valor = item.partition("=")
+        try:
+            params[nome] = float(valor)
+        except ValueError:
+            print(f"erro: parametro invalido '{item}' (use nome=valor numerico)", file=sys.stderr)
+            return 1
+    ex = Executor(Instalador(args.raiz))
+    resultado = ex.executar(args.id, [Pedido(pedido_id="cli-1", recorte=imagem, fonte=args.fonte, altura_pessoa_px=args.altura, parametros=params)])[0]
+    print(json.dumps(resultado, ensure_ascii=False, indent=2))
+    return 0 if resultado["estado"] == "ok" else 17
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m src.jutta_ped.especialistas", description="Ferramentas de pacotes de especialista (protocolo 1).")
     sub = ap.add_subparsers(dest="comando", required=True)
@@ -141,5 +165,13 @@ def main(argv: list[str] | None = None) -> int:
             sp.add_argument(p)
         sp.add_argument("--raiz", default=str(RAIZ_PADRAO), help="armazenamento (padrao runtime/especialistas)")
         sp.set_defaults(func=_instalacao)
+    ex = sub.add_parser("executar", help="roda o especialista ATIVO sobre uma imagem (diagnostico; sem alertas)")
+    ex.add_argument("id")
+    ex.add_argument("imagem")
+    ex.add_argument("--parametro", action="append", help="nome=valor (repetivel)")
+    ex.add_argument("--fonte", default="visivel", choices=("visivel", "termica"))
+    ex.add_argument("--altura", type=int, default=None, help="altura da pessoa no quadro original, em px")
+    ex.add_argument("--raiz", default=str(RAIZ_PADRAO))
+    ex.set_defaults(func=_executar)
     args = ap.parse_args(argv)
     return args.func(args)

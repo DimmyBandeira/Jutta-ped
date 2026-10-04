@@ -59,6 +59,14 @@ class ErroInstalacao(Exception):
 
 
 @dataclass
+class AtivoResolvido:
+    id: str
+    versao: str
+    pasta: Path
+    identidade: str           # conteudo_sha256 gravado na instalacao
+
+
+@dataclass
 class ResultadoInstalacao:
     id: str
     versao: str
@@ -389,6 +397,20 @@ class Instalador:
             except ValueError:
                 continue
         return saida
+
+    def obter_ativo(self, pid: str, *, verificar: bool = True) -> AtivoResolvido:
+        """Versao ativa de `pid`. Com `verificar`, confere a integridade completa (validador + hashes + identidade) e
+        falha fechado: nunca devolve uma pasta que nao confere. Somente leitura (nao marca nada no registro)."""
+        esp = self._ler_registro()["especialistas"].get(pid)
+        if not esp or not esp.get("ativa"):
+            raise ErroInstalacao(COD_ESTADO, "sem_versao_ativa", f"{pid} nao tem versao ativa")
+        ver = esp["ativa"]
+        v = esp["versoes"].get(ver, {})
+        if v.get("estado") != "instalada":
+            raise ErroInstalacao(COD_ESTADO, "versao_ativa_invalida", f"{pid} {ver} esta {v.get('estado', 'ausente')}; reverta ou ative outra versao")
+        if verificar and not self._verificar(pid, ver, v):
+            raise ErroInstalacao(COD_INTEGRIDADE, "integridade_falhou", f"{pid} {ver}: os arquivos instalados nao conferem com o registro")
+        return AtivoResolvido(pid, ver, self.pacotes / pid / ver, v.get("conteudo_sha256", ""))
 
     def caminho_ativo(self, pid: str) -> Path | None:
         """Pasta da versao ativa, ou None. E o que o host (executor) deve usar."""
