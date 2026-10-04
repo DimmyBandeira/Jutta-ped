@@ -24,24 +24,24 @@ Ativar uma versão a torna a vigente no registro; o motor de análise ainda não
 {% endif %}
 {% endif %}
 
-<form class="painel" method="post" action="/painel/especialistas/instalar" enctype="multipart/form-data">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <div class="cartao">
-    <h4>Instalar pacote</h4>
-    <label>Arquivo .zip do especialista (até {{ upload_max_mib }} MiB)</label>
-    <input type="file" name="pacote" accept=".zip,application/zip" required>
+<div class="secao">
+  <h4>Instalar pacote</h4>
+  <form method="post" action="/painel/especialistas/instalar" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="aviso" for="pacote" style="display:block; margin:0 0 .4rem">Arquivo .zip do especialista (até {{ upload_max_mib }} MiB)</label>
+    <input id="pacote" type="file" name="pacote" accept=".zip,application/zip" required>
     <p class="aviso">O pacote é validado e extraído em área isolada; fica <strong>inativo</strong> até você ativar. Não pode conter código executável.</p>
     <div class="rodape-form"><button class="btn primary" type="submit">Validar e instalar</button></div>
-  </div>
-</form>
+  </form>
+</div>
 
 {% for e in itens %}
-<div class="cartao" style="margin:1rem 0">
-  <h4 style="margin:0 0 .3rem">{{ e.nome }} <span class="aviso" style="margin:0">{{ e.id }}</span></h4>
+<div class="secao">
+  <h4 style="text-transform:none; font-size:1rem; color:var(--text); margin:0 0 .3rem">{{ e.nome }} <span class="aviso" style="margin:0">{{ e.id }}</span></h4>
   <p class="aviso" style="margin:.2rem 0 .6rem">Versão ativa:
     {% if e.ativa %}<span class="badge online">{{ e.ativa }}</span>{% else %}<span class="badge neutro">nenhuma</span>{% endif %}
   </p>
-  <table>
+  <table class="tab-versoes">
     <thead><tr><th>Versão</th><th>Estado</th><th>Instalada em</th><th>Origem</th><th></th></tr></thead>
     <tbody>
     {% for v in e.versoes %}
@@ -75,21 +75,21 @@ Ativar uma versão a torna a vigente no registro; o motor de análise ainda não
 {% if not registro_erro %}<p class="aviso">Nenhum especialista instalado.</p>{% endif %}
 {% endfor %}
 
-<div class="cartao" style="margin:1rem 0">
+<div class="secao">
   <h4>Manutenção</h4>
   <p class="aviso">Conclui ou desfaz instalações interrompidas (queda do servidor, falha de disco) e isola pastas sem registro.</p>
   <form method="post" action="/painel/especialistas/recuperar">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn" type="submit">Executar recuperação</button></form>
 </div>
 
-<div class="cartao" style="margin:1rem 0">
+<div class="secao">
   <h4>Operações recentes</h4>
   {% if operacoes %}
   <table>
     <thead><tr><th>Quando</th><th>Operação</th><th>Detalhe</th></tr></thead>
     <tbody>
     {% for o in operacoes %}
-      <tr><td>{{ o.ts }}</td><td>{{ o.op }}</td><td>{{ o.id or '' }}{% if o.versao %} {{ o.versao }}{% endif %}{% if o.slug %} · {{ o.slug }}{% endif %}{% if o.acao %}{{ o.acao }}{% endif %}</td></tr>
+      <tr><td>{{ o.ts }}</td><td>{{ o.op }}</td><td>{{ o.id or '' }}{% if o.versao %} {{ o.versao }}{% endif %}{% if o.slug %} · {{ o.slug }}{% endif %}{% if o.acao %}{{ o.acao }}{% endif %}{% if o.codigo is defined %}código de validação {{ o.codigo }}{% endif %}{% if o.erro %}{{ o.erro }}{% endif %}</td></tr>
     {% endfor %}
     </tbody>
   </table>

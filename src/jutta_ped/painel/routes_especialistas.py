@@ -9,6 +9,7 @@ consome (etapa futura). A tela diz isso ao operador.
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Request, UploadFile
@@ -113,7 +114,7 @@ def instalar(request: Request, pacote: UploadFile = File(...), admin: Usuario = 
                     return _pagina(request, admin, status_code=413, erro=f"Arquivo maior que o limite de {teto // MIB} MiB.")
                 saida.write(bloco)
         try:
-            r = inst.instalar(tmp)
+            r = inst.instalar(tmp, rotulo=Path(nome.replace(chr(92), '/')).name)
         except ErroInstalacao as exc:
             _auditar(db, admin, "especialista_instalacao_recusada", f"{nome}: {exc.slug}")
             return _pagina(request, admin, status_code=_STATUS.get(exc.codigo, 500), erro=exc.mensagem, relatorio=exc.relatorio)

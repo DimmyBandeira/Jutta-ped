@@ -31,7 +31,11 @@ permissões finas (apenas admin), assinatura de pacotes.
   (409), ativar/reverter/remover pelo painel, versão adulterada recusada, recuperação com registro corrompido.
 * Suíte completa: **486 passaram, 6 puladas** (testes de navegador Edge, puladas como antes). O teste real em Qt
   WebEngine do menu do admin passa com o novo item.
-* **Não** foi feita revisão visual da tela num navegador: o HTML foi validado por testes de resposta, não por captura.
+* Revisão visual em **Edge real** (Playwright, `tests/test_painel_especialistas_navegador.py`, 2 testes): listagem vazia, upload
+  recusado com tabela de problemas, duas versões instaladas, ativar/trocar/voltar/remover (com confirmação), sem erros de
+  JavaScript e sem rolagem horizontal; usuário comum não vê o menu e recebe 403. A revisão achou e corrigiu: formulário em
+  caixa dupla, seções sem fundo de cartão, coluna "Detalhe" vazia em operação recusada e "Origem" mostrando o nome temporário
+  do upload (agora o nome do arquivo enviado). Capturas: defina `JUTTA_CAPTURAS=<pasta>` ao rodar o teste.
 
 ## Correção após revisão externa (04/10/2026)
 

@@ -103,6 +103,7 @@ def test_upload_valido_instala_inativo_e_audita(painel, tmp_path: Path) -> None:
     assert r.status_code == 303 and r.headers["location"] == "/painel/especialistas"
     html = client.get("/painel/especialistas").text
     assert "br.teste.bebe" in html and "instalado" in html and "inativo" in html
+    assert "pacote.zip" in html                       # origem mostra o nome enviado, nao o temporario
     reg = app.state.especialistas.listar()["br.teste.bebe"]
     assert reg["ativa"] is None and reg["versoes"]["1.0.0"]["estado"] == "instalada"
     assert "especialista_instalado" in _acoes(database)

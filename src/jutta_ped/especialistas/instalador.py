@@ -194,8 +194,10 @@ class Instalador:
 
     # ------------------------------------------------------------------ instalar
 
-    def instalar(self, origem: Path | str) -> ResultadoInstalacao:
+    def instalar(self, origem: Path | str, *, rotulo: str | None = None) -> ResultadoInstalacao:
+        """`rotulo`: nome de exibicao da origem (ex.: nome do arquivo enviado); so informativo, nunca vira caminho."""
         origem = Path(origem)
+        rotulo = (rotulo or origem.name)[:80]
         with self._bloqueio():
             self._recuperar_interno()
             rel = validar(origem, host_protocolo=self.host_protocolo, limites=self.limites)
@@ -230,13 +232,13 @@ class Instalador:
                 if destino.exists():
                     raise ErroInstalacao(COD_CONFLITO, "destino_ocupado", f"{destino} ja existe fora do registro; rode 'recuperar'")
                 marcador.write_text(json.dumps({"id": pid, "versao": ver, "staging": str(stg), "destino": str(destino),
-                                                "hashes": rel.hashes, **ident, "origem": str(origem), "ts": _agora()}), encoding="utf-8")
+                                                "hashes": rel.hashes, **ident, "origem": rotulo, "ts": _agora()}), encoding="utf-8")
                 _ponto("apos_marcador")
                 destino.parent.mkdir(parents=True, exist_ok=True)
                 _substituir(stg, destino)
                 _ponto("apos_mover")
                 reg["especialistas"].setdefault(pid, {"ativa": None, "historico": [], "versoes": {}})["versoes"][ver] = {
-                    "estado": "instalada", "instalado_em": _agora(), "origem": origem.name, "origem_sha256": self._hash_origem(origem),
+                    "estado": "instalada", "instalado_em": _agora(), "origem": rotulo, "origem_sha256": self._hash_origem(origem),
                     "hashes": rel.hashes, **ident, "nome": rel.pacote["nome"],
                 }
                 self._gravar_registro(reg)

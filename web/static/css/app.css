@@ -43,6 +43,12 @@
          padding:1rem 1.1rem; margin:1rem 0; }
   form.painel .cartao > h4 { margin:0 0 .8rem; font-size:.8rem; color:var(--muted); font-weight:600;
          text-transform:uppercase; letter-spacing:.04em; }
+.secao { background:var(--panel-2); border:1px solid var(--border); border-radius:9px; padding:1rem 1.1rem; margin:1rem 0; }
+  .secao > h4 { margin:0 0 .8rem; font-size:.8rem; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+  .secao input[type=file] { width:100%; padding:.45rem; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text); }
+  .secao input[type=file]::file-selector-button { margin-right:.7rem; padding:.35rem .8rem; border-radius:6px; border:1px solid var(--border);
+         background:var(--panel); color:var(--text); cursor:pointer; }
+  .secao table { margin-top:.3rem; }
   .opcao-grande { display:flex; align-items:center; gap:.6rem; font-size:.95rem; color:var(--text); cursor:pointer; }
   .opcao-grande input { width:auto; transform:scale(1.25); }
   .checkboxes { display:flex; flex-direction:column; gap:.5rem; }
