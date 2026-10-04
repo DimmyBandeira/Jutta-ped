@@ -1,0 +1,25 @@
+{
+  "video": "DVR-1-Ch.7-8 5-- PAV-Hall-ELEV SERVI.dav",
+  "sha256": "63bf6a2912e55e3dd44ae858ba234ac78dbcf72e01818eb924f6bd94e8027dd9",
+  "origem_revisao": "ia",
+  "status": "proposta_nao_confirmada",
+  "revisado": false,
+  "revisor": "Codex (IA)",
+  "data": "2026-10-04",
+  "revisao_completa_do_video": false,
+  "metodo": {
+    "tipo": "folhas_de_contato",
+    "passo_quadros": 8,
+    "limite": "Amostragem visual distribuida pela duracao; nao equivale a revisao humana integral. Ver revisao_codex.md."
+  },
+  "episodios": [
+    {
+      "id": "dvr1-e1",
+      "sujeito_local": "crianca-vermelho",
+      "inicio_s": 9.2,
+      "fim_s": 31.933,
+      "estado_esperado": "qualquer",
+      "observacao": "Um evento continuo. Inicio conservador pela saida do adulto; afastamento comeca antes. Confirmar criterio da receita."
+    }
+  ]
+}

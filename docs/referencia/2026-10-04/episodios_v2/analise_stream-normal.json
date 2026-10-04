@@ -1,0 +1,24 @@
+{
+  "alertas": [],
+  "cobertura": {
+    "erro": null,
+    "integral": true,
+    "motivo_parada": "eof",
+    "motivos_nao_integral": [],
+    "quadros_analisados": 395,
+    "quadros_do_arquivo": 395,
+    "razao": 1.0,
+    "status_final": "finished",
+    "terminou_por_eof": true,
+    "timeout": false
+  },
+  "fps": 30.0,
+  "quadros_analisados": 395,
+  "quadros_do_arquivo": 395,
+  "sha256": "ff1c41586483d8d4feec4eb353d09739ca13a8f1c3444212e43a65451ca02929",
+  "suprimidos": [],
+  "tempo_de_analise_s": 9.62,
+  "trilhas_distintas_nos_alertas": [],
+  "versao_avaliador": 2,
+  "video": "stream-normal.mp4"
+}

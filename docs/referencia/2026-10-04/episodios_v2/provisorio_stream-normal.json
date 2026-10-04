@@ -1,0 +1,63 @@
+{
+  "alertas_emitidos": 0,
+  "alertas_suprimidos": 0,
+  "anotacao": {
+    "avisos": [
+      "revisao nao cega: o revisor pode ter consultado os alertas do sistema (vies de confirmacao)"
+    ],
+    "data_declarada": "2026-10-04",
+    "erros": [],
+    "estado": "proposta_ia",
+    "oficial": false,
+    "origem_revisao": "ia",
+    "pendencias": [
+      "origem da anotacao e IA (proposta): so revisao humana gera metricas oficiais",
+      "anotacao nao confirmada (status=proposta_nao_confirmada, revisado=false)",
+      "sem revisao_completa_do_video: alertas fora dos episodios nao podem ser chamados de falsos",
+      "procedencia do arquivo de video nao confirmada (fonte, tipo real|sintetico e confirmado_por)"
+    ],
+    "procedencia": null,
+    "revisao_cega": null,
+    "revisor_declarado": "Codex (IA)"
+  },
+  "aviso": "LEITURA PROVISORIA a partir de uma anotacao NAO confirmada: nao sao metricas de qualidade e nao devem ser citadas como tal. Depende de confirmacao humana, procedencia do video e criterio de inicio dos episodios.",
+  "cobertura": {
+    "erro": null,
+    "integral": true,
+    "motivo_parada": "eof",
+    "motivos_nao_integral": [],
+    "quadros_analisados": 395,
+    "quadros_do_arquivo": 395,
+    "razao": 1.0,
+    "status_final": "finished",
+    "terminou_por_eof": true,
+    "timeout": false
+  },
+  "leitura": {
+    "_aviso": "LEITURA PROVISORIA a partir de uma anotacao NAO confirmada: nao sao metricas de qualidade e nao devem ser citadas como tal. Depende de confirmacao humana, procedencia do video e criterio de inicio dos episodios.",
+    "_negativo_declarado": false,
+    "_oficial": false,
+    "alertas_ambiguos": [],
+    "alertas_fora_dos_episodios_propostos": [],
+    "alertas_repetidos": 0,
+    "associacoes_manuais_fora_da_janela": [],
+    "aviso_negativo_curto": "negativo de 13 s: teste de sanidade, NAO estima falsos alertas por hora (menos de 600 s de video)",
+    "detectados": 0,
+    "detectados_sem_ambiguidade": 0,
+    "duracao_do_video_s": 13.17,
+    "episodios_positivos": 0,
+    "episodios_sobrepostos": [],
+    "n_alertas_fora_dos_episodios_propostos": 0,
+    "perdidos": [],
+    "por_episodio": [],
+    "transicoes_de_trilha": 0,
+    "trilhas_adicionais": 0
+  },
+  "motivo": null,
+  "oficial": false,
+  "ressalva": null,
+  "tolerancia_s": 2.0,
+  "trilhas_distintas_nos_alertas": [],
+  "versao_avaliador": 2,
+  "video": "stream-normal.mp4"
+}

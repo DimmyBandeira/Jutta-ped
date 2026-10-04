@@ -1,0 +1,39 @@
+{
+  "alertas_emitidos": 2,
+  "alertas_suprimidos": 2,
+  "anotacao": {
+    "avisos": [],
+    "data_declarada": null,
+    "erros": [],
+    "estado": "sem_anotacao",
+    "oficial": false,
+    "origem_revisao": null,
+    "pendencias": [
+      "nenhuma anotacao para este video"
+    ],
+    "procedencia": null,
+    "revisao_cega": null,
+    "revisor_declarado": null
+  },
+  "cobertura": {
+    "erro": null,
+    "integral": true,
+    "motivo_parada": "eof",
+    "motivos_nao_integral": [],
+    "quadros_analisados": 441,
+    "quadros_do_arquivo": 441,
+    "razao": 1.0,
+    "status_final": "finished",
+    "terminou_por_eof": true,
+    "timeout": false
+  },
+  "metricas": null,
+  "motivo": "nenhum arquivo de anotacao para este video",
+  "revisado": false,
+  "trilhas_distintas_nos_alertas": [
+    1,
+    18
+  ],
+  "versao_avaliador": 2,
+  "video": "DVR-3-Ch.0-1 ACESSO-BLINDEX.avi"
+}

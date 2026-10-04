@@ -136,19 +136,36 @@ def montar(pasta: Path) -> str:
                         str(escala["processos"]["descartados"]), f"{_f(escala['processos']['rss_mb_soma'], 0)} MB (soma)"]]), "",
               f"* **Razão B/A:** {v['razao_processos_sobre_threads']} · **CPU média do sistema em A:** {_f(v['cpu_sistema_media_threads_pct'])} %.",
               f"* **Conclusão pela regra pré-registrada:** **{v['conclusao']}**. Regra: {v['regra']}.", ""]
-    ep = sorted((pasta / "episodios").glob("avaliacao_*.json")) if (pasta / "episodios").exists() else []
+    pasta_ep = pasta / "episodios_v2" if (pasta / "episodios_v2").exists() else pasta / "episodios"
+    ep = sorted(pasta_ep.glob("avaliacao_*.json")) if pasta_ep.exists() else []
     if ep:
-        p += ["## 4. Qualidade dos alertas (episódios)", ""]
+        p += ["## 4. Qualidade dos alertas (episódios)", "",
+              f"Avaliador v{(_ler(ep[0]).get('versao_avaliador') or 1)} ({pasta_ep.name}). Só **anotação oficial** (humana, confirmada, revisão completa, procedência do arquivo "
+              "confirmada) com **cobertura integral** da análise gera métricas; o restante aparece como pendência.", ""]
         linhas = []
         for f in ep:
             a = _ler(f)
-            mt = a["metricas"]
+            mt, cob, an = a["metricas"], a.get("cobertura"), a.get("anotacao", {})
             linhas.append([a["video"], str(a["alertas_emitidos"]), str(a["alertas_suprimidos"]), str(a["trilhas_distintas_nos_alertas"]),
-                           "sim" if a["revisado"] else "**não**", "—" if mt is None else f"{mt['detectados']}/{mt['episodios_positivos']}",
-                           "—" if mt is None else str(mt["n_alertas_falsos"]), "—" if mt is None else str(mt["alertas_repetidos"]),
-                           "—" if mt is None else str(mt["trocas_de_trilha"]), a.get("motivo", "")])
-        p += [_tabela(["vídeo", "alertas", "suprimidos", "trilhas nos alertas", "revisado", "detectados", "falsos", "repetidos", "trocas de trilha", "observação"], linhas), "",
-              "Métricas de qualidade só existem para vídeos com episódios **revisados por uma pessoa**; `—` = indisponível (não estimado).", ""]
+                           "—" if cob is None else ("sim" if cob["integral"] else "**não**"), an.get("estado", "—"),
+                           "—" if mt is None else f"{mt['detectados']}/{mt['episodios_positivos']}", "—" if mt is None else str(mt["n_alertas_falsos"]),
+                           "—" if mt is None else str(mt["alertas_repetidos"]),
+                           "—" if mt is None else f"{mt['trilhas_adicionais']} / {mt['transicoes_de_trilha']}", a.get("motivo", "")])
+        p += [_tabela(["vídeo", "alertas", "suprimidos", "trilhas nos alertas", "cobertura integral", "anotação", "detectados", "falsos", "repetidos", "trilhas adic. / transições", "observação"], linhas), "",
+              "`—` = indisponível (não estimado).", ""]
+        prov = sorted(pasta_ep.glob("provisorio_*.json"))
+        if prov:
+            p += ["### 4.1 Leitura provisória das propostas de IA (NÃO são métricas de qualidade)", "",
+                  "**Cálculo sobre anotações não confirmadas por pessoa**, só para mostrar o que sairia se elas fossem confirmadas. Não citar como qualidade do sistema.", ""]
+            linhas = []
+            for f in prov:
+                a = _ler(f)
+                lt = a.get("leitura")
+                linhas.append([a["video"], a["anotacao"]["estado"], "—" if lt is None else f"{lt['detectados']}/{lt['episodios_positivos']}",
+                               "—" if lt is None else (", ".join(lt["perdidos"]) or "nenhum"), "—" if lt is None else str(lt["n_alertas_fora_dos_episodios_propostos"]),
+                               "—" if lt is None else str(lt["alertas_repetidos"]), "—" if lt is None else str(len(lt["alertas_ambiguos"])),
+                               a.get("ressalva") or a.get("motivo") or "", "; ".join(a["anotacao"]["pendencias"]) + (" | AVISOS: " + "; ".join(a["anotacao"]["avisos"]) if a["anotacao"]["avisos"] else "")])
+            p += [_tabela(["vídeo", "estado da proposta", "detectados", "perdidos", "alertas fora dos episódios propostos", "repetidos", "alertas ambíguos", "ressalvas", "pendências para confirmar"], linhas), ""]
     p += ["## 5. Leitura dos resultados", "", leitura, ""]
     p += ["## 6. Limitações", "",
           "* Fontes são **arquivos de vídeo reproduzidos em tempo real**, não câmeras RTSP: não medem rede, decodificação H.264/H.265 em tempo real do go2rtc nem a latência do navegador.",

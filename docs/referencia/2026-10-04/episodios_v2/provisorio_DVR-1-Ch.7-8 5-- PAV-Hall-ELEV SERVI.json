@@ -1,0 +1,84 @@
+{
+  "alertas_emitidos": 3,
+  "alertas_suprimidos": 3,
+  "anotacao": {
+    "avisos": [
+      "revisao nao cega: o revisor pode ter consultado os alertas do sistema (vies de confirmacao)"
+    ],
+    "data_declarada": "2026-10-04",
+    "erros": [],
+    "estado": "proposta_ia",
+    "oficial": false,
+    "origem_revisao": "ia",
+    "pendencias": [
+      "origem da anotacao e IA (proposta): so revisao humana gera metricas oficiais",
+      "anotacao nao confirmada (status=proposta_nao_confirmada, revisado=false)",
+      "sem revisao_completa_do_video: alertas fora dos episodios nao podem ser chamados de falsos",
+      "procedencia do arquivo de video nao confirmada (fonte, tipo real|sintetico e confirmado_por)",
+      "episodio 'dvr1-e1' sem criterio_inicio (define o significado do atraso e do inicio do episodio)"
+    ],
+    "procedencia": null,
+    "revisao_cega": null,
+    "revisor_declarado": "Codex (IA)"
+  },
+  "aviso": "LEITURA PROVISORIA a partir de uma anotacao NAO confirmada: nao sao metricas de qualidade e nao devem ser citadas como tal. Depende de confirmacao humana, procedencia do video e criterio de inicio dos episodios.",
+  "cobertura": {
+    "erro": null,
+    "integral": true,
+    "motivo_parada": "eof",
+    "motivos_nao_integral": [],
+    "quadros_analisados": 480,
+    "quadros_do_arquivo": 480,
+    "razao": 1.0,
+    "status_final": "finished",
+    "terminou_por_eof": true,
+    "timeout": false
+  },
+  "leitura": {
+    "_aviso": "LEITURA PROVISORIA a partir de uma anotacao NAO confirmada: nao sao metricas de qualidade e nao devem ser citadas como tal. Depende de confirmacao humana, procedencia do video e criterio de inicio dos episodios.",
+    "_negativo_declarado": false,
+    "_oficial": false,
+    "alertas_ambiguos": [],
+    "alertas_fora_dos_episodios_propostos": [],
+    "alertas_repetidos": 2,
+    "associacoes_manuais_fora_da_janela": [],
+    "detectados": 1,
+    "detectados_sem_ambiguidade": 1,
+    "duracao_do_video_s": 32.0,
+    "episodios_positivos": 1,
+    "episodios_sobrepostos": [],
+    "n_alertas_fora_dos_episodios_propostos": 0,
+    "perdidos": [],
+    "por_episodio": [
+      {
+        "alertas": 3,
+        "atraso_s": 6.467,
+        "criterio_inicio": null,
+        "detectado": true,
+        "detectado_sem_ambiguidade": true,
+        "id": "dvr1-e1",
+        "repetidos": 2,
+        "transicoes_de_trilha": 2,
+        "trilhas": [
+          2,
+          4,
+          20
+        ],
+        "trilhas_adicionais": 2
+      }
+    ],
+    "transicoes_de_trilha": 2,
+    "trilhas_adicionais": 2
+  },
+  "motivo": null,
+  "oficial": false,
+  "ressalva": null,
+  "tolerancia_s": 2.0,
+  "trilhas_distintas_nos_alertas": [
+    2,
+    4,
+    20
+  ],
+  "versao_avaliador": 2,
+  "video": "DVR-1-Ch.7-8 5-- PAV-Hall-ELEV SERVI.dav"
+}

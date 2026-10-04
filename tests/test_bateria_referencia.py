@@ -159,54 +159,6 @@ def _analise(alertas: list[tuple[float, str, int]], sha: str = "abc") -> dict:
             "suprimidos": [], "trilhas_distintas_nos_alertas": sorted({tr for _, _, tr in alertas})}
 
 
-def _rev(eps: list[dict], **kw) -> dict:
-    return {"video": "v.dav", "sha256": "abc", "revisado": True, "revisor": "Fulano", "data": "2026-10-04", "revisao_completa_do_video": True,
-            "episodios": eps, **kw}
-
-
-EP1 = {"id": "e1", "inicio_s": 10.0, "fim_s": 20.0, "estado_esperado": "CHILD_ALONE"}
-
-
-def test_sem_revisao_so_descreve_e_nao_inventa_metricas() -> None:
-    a = _analise([(12.0, "CHILD_ALONE", 5)])
-    r = avaliar(a, None)
-    assert r["revisado"] is False and r["metricas"] is None and r["alertas_emitidos"] == 1
-    assert avaliar(a, {**_rev([EP1]), "revisado": False})["metricas"] is None
-    assert avaliar(a, {**_rev([EP1]), "sha256": "outro"})["metricas"] is None          # revisao de OUTRO arquivo
-    parcial = avaliar(a, _rev([EP1], revisao_completa_do_video=False))
-    assert parcial["metricas"] is None and "parcial" in parcial["motivo"]
-
-
-def test_detectado_perdido_falso_repetido_e_troca_de_trilha() -> None:
-    eps = [EP1, {"id": "e2", "inicio_s": 40.0, "fim_s": 50.0, "estado_esperado": "CHILD_SEPARATED"}, {"id": "e3", "inicio_s": 70.0, "fim_s": 75.0}]
-    alertas = [
-        (12.0, "CHILD_ALONE", 5),         # e1: detectado (atraso 2 s)
-        (15.0, "CHILD_ALONE", 5),         # e1: repetido
-        (18.0, "CHILD_ALONE", 9),         # e1: repetido por TROCA de trilha (5 -> 9)
-        (30.0, "CHILD_ALONE", 7),         # fora de qualquer episodio: falso
-        (45.0, "CHILD_ALONE", 8),         # dentro do tempo de e2 mas estado diferente do esperado: falso
-    ]
-    r = avaliar(_analise(alertas), _rev(eps))
-    m = r["metricas"]
-    assert m["episodios_positivos"] == 3 and m["detectados"] == 1 and m["perdidos"] == ["e2", "e3"]
-    assert m["n_alertas_falsos"] == 2 and [f["t_s"] for f in m["alertas_falsos"]] == [30.0, 45.0]
-    assert m["alertas_repetidos"] == 2 and m["trocas_de_trilha"] == 1
-    e1 = m["por_episodio"][0]
-    assert e1["detectado"] and e1["atraso_s"] == 2.0 and e1["alertas"] == 3 and e1["trilhas"] == [5, 9]
-
-
-def test_tolerancia_e_estado_qualquer() -> None:
-    a = _analise([(8.5, "CHILD_SEPARATED", 1)])
-    ep = {"id": "e1", "inicio_s": 10.0, "fim_s": 20.0, "estado_esperado": "qualquer"}
-    assert avaliar(a, _rev([ep]), tolerancia_s=2.0)["metricas"]["detectados"] == 1      # 8.5 >= 10 - 2
-    assert avaliar(a, _rev([ep]), tolerancia_s=1.0)["metricas"]["detectados"] == 0
-
-
-def test_video_sem_episodios_e_revisao_completa_todo_alerta_e_falso() -> None:
-    r = avaliar(_analise([(3.0, "CHILD_ALONE", 1), (4.0, "CHILD_ALONE", 2)]), _rev([]))
-    assert r["metricas"]["n_alertas_falsos"] == 2 and r["metricas"]["episodios_positivos"] == 0
-
-
 # --- relatorio ---------------------------------------------------------------------------------------------------------
 
 def _ensaio(cameras: int, fps: float) -> dict:
@@ -242,8 +194,9 @@ def test_relatorio_transcreve_dados_e_declara_limitacoes(tmp_path: Path) -> None
     md = montar(tmp_path)
     assert "1 cam · fps 5 · cpu · r1" in md and "2 cam · fps 5 · cpu · r1" in md
     assert "c4_fps5_auto_r1 (timeout)" in md                     # ensaio que falhou aparece, nao e escondido
-    assert "LEITURA-DE-TESTE" in md and "## 6. Limitações" in md and "**não**" in md
-    assert "Métricas de qualidade só existem para vídeos com episódios **revisados" in md
+    assert "LEITURA-DE-TESTE" in md and "## 6. Limitações" in md
+    assert "sem_anotacao" in md and "cobertura integral" in md          # proveniencia e cobertura aparecem na tabela de qualidade
+    assert "Só **anotação oficial**" in md and "indisponível (não estimado)" in md
 
 
 # --- hash de modelo -------------------------------------------------------------------------------------------------

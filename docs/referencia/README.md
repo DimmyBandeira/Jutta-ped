@@ -19,7 +19,8 @@ python tools/bateria_referencia.py ambiente   --saida docs/referencia/AAAA-MM-DD
 python tools/bateria_referencia.py matriz     --saida docs/referencia/AAAA-MM-DD      # ~15 min
 python tools/bateria_referencia.py perfil     --saida docs/referencia/AAAA-MM-DD
 python tools/bateria_referencia.py escala     --saida docs/referencia/AAAA-MM-DD      # ~8 min
-python tools/bateria_referencia.py episodios  --saida docs/referencia/AAAA-MM-DD
+python tools/bateria_referencia.py episodios  --saida docs/referencia/AAAA-MM-DD      # analisa 3 vídeos; cobertura + pacote de revisão
+python tools/bateria_referencia.py reavaliar  --saida docs/referencia/AAAA-MM-DD      # recalcula sem inferência (após confirmar)
 python tools/bateria_referencia.py relatorio  --saida docs/referencia/AAAA-MM-DD
 ```
 
@@ -67,28 +68,83 @@ O perfil mostra **onde está o tempo** (Python × nativo); a comparação thread
 **antes** de olhar os dados (ver `tools/bateria/escala.py`): razão ≥ 1,30 com CPU do sistema < 80 % ⇒ consistente com o GIL; CPU ≥ 80 % ⇒ limitado por CPU;
 razão < 1,10 ⇒ sem diferença; senão inconclusivo. Nenhum dos dois resultados, sozinho, "prova" o GIL; o relatório descreve os confundidores.
 
-## 6. Qualidade dos alertas: episódios revisados
+## 6. Qualidade dos alertas: episódios revisados (avaliador v2)
 
-A bateria **não rotula nada**. O comando `episodios` analisa cada vídeo inteiro (todos os quadros) e entrega em `episodios/revisao/<vídeo>/`:
-os quadros de cada alerta, `linha_do_tempo.jpg` (um quadro a cada 2 s, com o tempo) e `episodios.rascunho.json`.
+A bateria **não rotula nada e não confirma revisão**. `episodios` analisa cada vídeo inteiro (todos os quadros), grava `analise_<vídeo>.json` com a **cobertura**
+e entrega em `episodios_v2/revisao/<vídeo>/` os quadros de cada alerta, `linha_do_tempo.jpg` e `episodios.rascunho.json` (esses JPG mostram pessoas e não são versionados).
 
-Para virar medida, uma pessoa preenche o arquivo e o salva em `docs/referencia/episodios/<nome-do-vídeo-sem-extensão>.json`:
+### 6.1 Duas coisas diferentes: proposta e confirmação
+
+| | Proposta (ex.: de IA) | Anotação confirmada |
+|---|---|---|
+| `origem_revisao` / `status` | `ia` ou `humana` / `proposta_nao_confirmada` | `humana` / `confirmada` |
+| Onde fica | `docs/referencia/<data>/propostas_ia/` (**não se edita**: é a proposta como foi feita) | `docs/referencia/episodios/<vídeo>.json` |
+| O que o avaliador faz | `leitura_provisoria`: mostra o que sairia **se** fosse confirmada; rotulada `oficial=false` dentro do próprio corte e com nomes que **não** são os das métricas (`alertas_fora_dos_episodios_propostos`, não "falsos") | `avaliar`: métricas oficiais, **se** todas as condições abaixo valem |
+
+`revisor`, `data`, `origem_revisao` e `procedencia` são **declarações** num arquivo editável. O avaliador **não verifica identidade, não prova que a revisão ocorreu e não detecta arquivos reeditados com campos coerentes**.
+Ele recusa o que é inconsistente (ex.: IA com `status=confirmada`, `revisor` com nome de IA em anotação "humana", `integral=true` sem campos que o sustentem). A confiança vem do processo humano.
+
+### 6.2 Contrato da anotação (esquema 2)
 
 ```json
-{"video": "x.dav", "sha256": "<do vídeo>", "revisado": true, "revisor": "Nome", "data": "AAAA-MM-DD",
- "revisao_completa_do_video": true,
- "episodios": [{"id": "e1", "inicio_s": 3.0, "fim_s": 9.5, "estado_esperado": "CHILD_ALONE|CHILD_SEPARATED|qualquer", "observacao": "..."}]}
+{"esquema": 2, "video": "x.dav", "sha256": "<do vídeo>",
+ "origem_revisao": "humana", "status": "confirmada", "revisado": true,
+ "revisor": "Nome", "data": "AAAA-MM-DD", "revisao_completa_do_video": true, "revisao_cega": false,
+ "procedencia": {"confirmada": true, "fonte": "DVR do 5º andar, exportado em 19/06", "tipo": "real", "confirmado_por": "Nome"},
+ "episodios": [{"id": "e1", "sujeito_local": "opcional", "inicio_s": 9.2, "fim_s": 31.9, "criterio_inicio": "adulto sai do campo",
+                "estado_esperado": "CHILD_ALONE|CHILD_SEPARATED|qualquer", "observacao": "..."}],
+ "negativo_confirmado": false,
+ "associacoes": [{"t_s": 6.333, "trilha": 1, "episodio": "e1"}]}
 ```
 
-Regras do avaliador (`tools/bateria/episodios.py`):
-* só calcula métricas se o SHA-256 confere, `revisado` é verdadeiro e `revisao_completa_do_video` é verdadeiro (sem a revisão completa não se pode chamar um alerta de "falso");
-* **detectado**: há alerta (`popup_alert`) com estado esperado dentro de `[inicio − tol, fim + tol]` (tolerância padrão 2 s); **perdido**: nenhum;
-* **falso**: alerta que não casa com nenhum episódio; **repetido**: alertas além do primeiro dentro do mesmo episódio; **troca de trilha**: trilhas distintas entre os alertas do mesmo episódio menos 1;
-* **negativos**: o que está fora dos episódios, numa revisão completa. Inclua vídeos **sem nenhum episódio** (`"episodios": []`) para medir falsos alertas.
+* **`episodios` é obrigatória.** `[]` só vale com `negativo_confirmado: true` (um negativo precisa ser **declarado**); sem a lista, a anotação é inválida (antes virava negativo em silêncio).
+* `criterio_inicio` (texto) é **obrigatório em cada episódio** para métricas oficiais: ele define o que significa o atraso (ex.: "adulto sai do campo" ≠ "início do afastamento").
+* `procedencia.confirmada = true` exige `fonte`, `tipo` (`real` | `sintetico`) e `confirmado_por`. Vídeos com marca de IA/“Veo” são suspeitos de sintéticos até confirmação.
+* `associacoes` (opcional) são **decisões humanas** que resolvem ambiguidade por alerta (`episodio: null` = o alerta não pertence a nenhum); as que contradizem a janela/estado aparecem em `associacoes_manuais_fora_da_janela`.
+* Campos livres, ignorados pelo cálculo: `metodo`, `observacao`, `instrucoes`, `derivada_de_proposta`.
 
-Candidatos a episódios positivos (relatório de 19/06, [pediatria_videos_reais_2026-06-19.md](../pediatria_videos_reais_2026-06-19.md)): `DVR-1-Ch.7-8 5-- PAV-Hall-ELEV SERVI.dav`
-(criança que o modelo v5 quase não reconhece como `child`) e `DVR-3-Ch.0-1 ACESSO-BLINDEX.avi` (nenhuma criança reconhecida). Sem a revisão humana, os números
-de qualidade ficam **indisponíveis**, não estimados.
+**Métricas oficiais só existem quando TODAS valem:** anotação válida; `origem_revisao=humana`; `status=confirmada` e `revisado=true`; `revisao_completa_do_video=true`; procedência confirmada (com fonte, tipo e responsável);
+`criterio_inicio` em todo episódio; revisor sem cara de IA; SHA-256 igual ao do vídeo; e **análise com cobertura integral consistente** (6.4). O que faltar aparece em `anotacao.pendencias`.
+`revisao_cega` ausente/falso gera **aviso** (o revisor pode ter visto os alertas do sistema), não bloqueio.
+
+### 6.3 Como o avaliador conta (determinístico, independe da ordem dos alertas)
+
+* **Candidatos de um alerta:** episódios com estado compatível. Se o alerta cai **dentro** do intervalo `[inicio, fim]` de algum episódio, só esses competem (a tolerância não compete com um intervalo que já o contém). Só um alerta fora de todos os intervalos usa a janela `[inicio − tol, fim + tol]` (tol padrão 2 s).
+* **Associação exclusiva:** cada alerta conta para **no máximo um** episódio. **Detecção** = casamento máximo entre alertas e episódios; preferência entre candidatos: (distância ao intervalo, `inicio_s`, `id`). Os demais alertas vão ao candidato preferido (**repetidos**) ou, sem candidato, são **falsos** (exige revisão completa).
+* **Ambiguidade:** um alerta com 2+ candidatos não carrega “qual pessoa” (o registro não tem essa informação e nada é inventado). Aparece em `alertas_ambiguos`; `detectados` é **limite superior** sob ambiguidade e `detectados_sem_ambiguidade` conta só alertas de candidato único ou associação manual. Episódios sobrepostos são listados e, sem `sujeito_local` distintos, geram aviso.
+* **Trilhas:** `trilhas_adicionais` = trilhas distintas − 1 (pode ser fragmentação **ou** outra criança); `transicoes_de_trilha` = mudanças de trilha na ordem do tempo (1→2→1 = 2). Nenhuma das duas prova fragmentação.
+* **Negativos:** vídeo sem episódio e `negativo_confirmado`; todo alerta é falso. Negativo com menos de 600 s é **teste de sanidade** (`aviso_negativo_curto`), não estima falsos por hora.
+
+### 6.4 Cobertura integral
+
+A análise registra `cobertura`: terminou por **EOF** (sem timeout, sem erro) **e** `quadros_analisados == quadros_do_arquivo`. O motivo é lido **antes** de parar a sessão (um `stop()` apagaria a diferença entre fim normal e timeout).
+O avaliador **recalcula** `integral` a partir dos campos-base e recusa inconsistências; análises sem `cobertura` (avaliador v1) não geram métricas. Arquivos cuja contagem de quadros o contêiner não declara com exatidão ficam sem cobertura comprovada (conservador).
+
+### 6.5 Caminho para confirmar (sem fabricar confirmação)
+
+1. Uma pessoa revê o vídeo **inteiro** (`linha_do_tempo.jpg` ajuda a navegar), confere cada episódio da proposta e fecha o `criterio_inicio` de cada um.
+2. Confirma a origem do arquivo (real ou sintético; quem confirmou).
+3. Registra a declaração, uma flag por afirmação, nenhuma com valor padrão que confirme por você:
+
+```
+python tools/bateria_referencia.py confirmar docs/referencia/2026-10-04/propostas_ia/dvr1.json --revisor "Nome da pessoa" \
+   --vi-o-video-inteiro --episodios-conferidos --procedencia-confirmada --procedencia-tipo real \
+   --procedencia-fonte "DVR do 5º andar, exportado em 19/06" --criterio-inicio dvr1-e1="adulto sai do campo" [--revisao-cega]
+python tools/bateria_referencia.py reavaliar --saida docs/referencia/2026-10-04      # sem refazer a inferência
+python tools/bateria_referencia.py relatorio --saida docs/referencia/2026-10-04
+```
+
+`confirmar` recusa revisor com cara de IA, copia a proposta para `docs/referencia/episodios/` com `derivada_de_proposta` (inclui o `metodo` original, que **não** vale para a confirmada) e **não altera** o arquivo da proposta.
+Se uma proposta for de negativo (`episodios: []`), `confirmar` o declara negativo — só use depois de rever o vídeo todo.
+
+### 6.6 Versões e histórico
+
+`episodios/` (rodada de 04/10/2026) foi gerada pelo **avaliador v1** e fica como histórico (sem cobertura, associação não exclusiva, “troca de trilha”): **não use para métricas**. `episodios_v2/` é do **avaliador v2**
+(`versao_avaliador: 2`). Mudanças v1 → v2: associação exclusiva e determinística (`tolerância` só fora dos intervalos); validação da anotação e proveniência; `trocas_de_trilha` substituída por `trilhas_adicionais` e `transicoes_de_trilha`;
+cobertura obrigatória e consistente; `criterio_inicio`/procedência obrigatórios; leitura provisória separada. Nenhum número oficial de qualidade foi gerado nem recalculado.
+
+Candidatos: `DVR-1-Ch.7-8 5-- PAV-Hall-ELEV SERVI.dav` e `DVR-3-Ch.0-1 ACESSO-BLINDEX.avi` (positivos prováveis, ver [revisão visual por IA](2026-10-04/revisao_codex.md)) e `stream-normal.mp4` (**candidato a negativo**, origem não confirmada; os vídeos com marca “Veo” são suspeitos de sintéticos).
+Sem a revisão humana, os números de qualidade ficam **indisponíveis**, não estimados.
 
 ## 7. Como ler e como comparar depois
 

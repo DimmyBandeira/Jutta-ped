@@ -1,0 +1,17 @@
+{
+  "video": "stream-normal.mp4",
+  "sha256": "ff1c41586483d8d4feec4eb353d09739ca13a8f1c3444212e43a65451ca02929",
+  "origem_revisao": "ia",
+  "status": "proposta_nao_confirmada",
+  "revisado": false,
+  "revisor": "Codex (IA)",
+  "data": "2026-10-04",
+  "revisao_completa_do_video": false,
+  "metodo": {
+    "tipo": "folhas_de_contato",
+    "passo_quadros": 8,
+    "limite": "Amostragem visual distribuida pela duracao; nao equivale a revisao humana integral. Ver revisao_codex.md."
+  },
+  "episodios": [],
+  "observacao": "Candidato negativo; confirmar origem do video e revisar integralmente. Analise do sistema ainda pendente."
+}

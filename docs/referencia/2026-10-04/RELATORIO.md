@@ -132,12 +132,25 @@ _pct_python_puro = tempo proprio em funcoes Python (executam bytecode, seguram o
 
 ## 4. Qualidade dos alertas (episódios)
 
-| vídeo | alertas | suprimidos | trilhas nos alertas | revisado | detectados | falsos | repetidos | trocas de trilha | observação |
-|---|---|---|---|---|---|---|---|---|---|
-| DVR-1-Ch.7-8 5-- PAV-Hall-ELEV SERVI.dav | 3 | 3 | [2, 4, 20] | **não** | — | — | — | — | nenhum arquivo de episodios para este video |
-| DVR-3-Ch.0-1 ACESSO-BLINDEX.avi | 2 | 2 | [1, 18] | **não** | — | — | — | — | nenhum arquivo de episodios para este video |
+Avaliador v2 (episodios_v2). Só **anotação oficial** (humana, confirmada, revisão completa, procedência do arquivo confirmada) com **cobertura integral** da análise gera métricas; o restante aparece como pendência.
 
-Métricas de qualidade só existem para vídeos com episódios **revisados por uma pessoa**; `—` = indisponível (não estimado).
+| vídeo | alertas | suprimidos | trilhas nos alertas | cobertura integral | anotação | detectados | falsos | repetidos | trilhas adic. / transições | observação |
+|---|---|---|---|---|---|---|---|---|---|---|
+| DVR-1-Ch.7-8 5-- PAV-Hall-ELEV SERVI.dav | 3 | 3 | [2, 4, 20] | sim | sem_anotacao | — | — | — | — | nenhum arquivo de anotacao para este video |
+| DVR-3-Ch.0-1 ACESSO-BLINDEX.avi | 2 | 2 | [1, 18] | sim | sem_anotacao | — | — | — | — | nenhum arquivo de anotacao para este video |
+| stream-normal.mp4 | 0 | 0 | [] | sim | sem_anotacao | — | — | — | — | nenhum arquivo de anotacao para este video |
+
+`—` = indisponível (não estimado).
+
+### 4.1 Leitura provisória das propostas de IA (NÃO são métricas de qualidade)
+
+**Cálculo sobre anotações não confirmadas por pessoa**, só para mostrar o que sairia se elas fossem confirmadas. Não citar como qualidade do sistema.
+
+| vídeo | estado da proposta | detectados | perdidos | alertas fora dos episódios propostos | repetidos | alertas ambíguos | ressalvas | pendências para confirmar |
+|---|---|---|---|---|---|---|---|---|
+| DVR-1-Ch.7-8 5-- PAV-Hall-ELEV SERVI.dav | proposta_ia | 1/1 | nenhum | 0 | 2 | 0 |  | origem da anotacao e IA (proposta): so revisao humana gera metricas oficiais; anotacao nao confirmada (status=proposta_nao_confirmada, revisado=false); sem revisao_completa_do_video: alertas fora dos episodios nao podem ser chamados de falsos; procedencia do arquivo de video nao confirmada (fonte, tipo real|sintetico e confirmado_por); episodio 'dvr1-e1' sem criterio_inicio (define o significado do atraso e do inicio do episodio) | AVISOS: revisao nao cega: o revisor pode ter consultado os alertas do sistema (vies de confirmacao) |
+| DVR-3-Ch.0-1 ACESSO-BLINDEX.avi | proposta_ia | 1/2 | dvr3-e2 | 0 | 1 | 0 |  | origem da anotacao e IA (proposta): so revisao humana gera metricas oficiais; anotacao nao confirmada (status=proposta_nao_confirmada, revisado=false); sem revisao_completa_do_video: alertas fora dos episodios nao podem ser chamados de falsos; procedencia do arquivo de video nao confirmada (fonte, tipo real|sintetico e confirmado_por); episodio 'dvr3-e1' sem criterio_inicio (define o significado do atraso e do inicio do episodio); episodio 'dvr3-e2' sem criterio_inicio (define o significado do atraso e do inicio do episodio) | AVISOS: revisao nao cega: o revisor pode ter consultado os alertas do sistema (vies de confirmacao) |
+| stream-normal.mp4 | proposta_ia | 0/0 | nenhum | 0 | 0 | 0 |  | origem da anotacao e IA (proposta): so revisao humana gera metricas oficiais; anotacao nao confirmada (status=proposta_nao_confirmada, revisado=false); sem revisao_completa_do_video: alertas fora dos episodios nao podem ser chamados de falsos; procedencia do arquivo de video nao confirmada (fonte, tipo real|sintetico e confirmado_por) | AVISOS: revisao nao cega: o revisor pode ter consultado os alertas do sistema (vies de confirmacao) |
 
 ## 5. Leitura dos resultados
 

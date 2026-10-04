@@ -1,0 +1,102 @@
+{
+  "alertas_emitidos": 2,
+  "alertas_suprimidos": 2,
+  "anotacao": {
+    "avisos": [
+      "revisao nao cega: o revisor pode ter consultado os alertas do sistema (vies de confirmacao)"
+    ],
+    "data_declarada": "2026-10-04",
+    "erros": [],
+    "estado": "proposta_ia",
+    "oficial": false,
+    "origem_revisao": "ia",
+    "pendencias": [
+      "origem da anotacao e IA (proposta): so revisao humana gera metricas oficiais",
+      "anotacao nao confirmada (status=proposta_nao_confirmada, revisado=false)",
+      "sem revisao_completa_do_video: alertas fora dos episodios nao podem ser chamados de falsos",
+      "procedencia do arquivo de video nao confirmada (fonte, tipo real|sintetico e confirmado_por)",
+      "episodio 'dvr3-e1' sem criterio_inicio (define o significado do atraso e do inicio do episodio)",
+      "episodio 'dvr3-e2' sem criterio_inicio (define o significado do atraso e do inicio do episodio)"
+    ],
+    "procedencia": null,
+    "revisao_cega": null,
+    "revisor_declarado": "Codex (IA)"
+  },
+  "aviso": "LEITURA PROVISORIA a partir de uma anotacao NAO confirmada: nao sao metricas de qualidade e nao devem ser citadas como tal. Depende de confirmacao humana, procedencia do video e criterio de inicio dos episodios.",
+  "cobertura": {
+    "erro": null,
+    "integral": true,
+    "motivo_parada": "eof",
+    "motivos_nao_integral": [],
+    "quadros_analisados": 441,
+    "quadros_do_arquivo": 441,
+    "razao": 1.0,
+    "status_final": "finished",
+    "terminou_por_eof": true,
+    "timeout": false
+  },
+  "leitura": {
+    "_aviso": "LEITURA PROVISORIA a partir de uma anotacao NAO confirmada: nao sao metricas de qualidade e nao devem ser citadas como tal. Depende de confirmacao humana, procedencia do video e criterio de inicio dos episodios.",
+    "_negativo_declarado": false,
+    "_oficial": false,
+    "alertas_ambiguos": [],
+    "alertas_fora_dos_episodios_propostos": [],
+    "alertas_repetidos": 1,
+    "associacoes_manuais_fora_da_janela": [],
+    "detectados": 1,
+    "detectados_sem_ambiguidade": 1,
+    "duracao_do_video_s": 14.7,
+    "episodios_positivos": 2,
+    "episodios_sobrepostos": [
+      [
+        "dvr3-e1",
+        "dvr3-e2"
+      ]
+    ],
+    "n_alertas_fora_dos_episodios_propostos": 0,
+    "perdidos": [
+      "dvr3-e2"
+    ],
+    "por_episodio": [
+      {
+        "alertas": 2,
+        "atraso_s": 3.933,
+        "criterio_inicio": null,
+        "detectado": true,
+        "detectado_sem_ambiguidade": true,
+        "id": "dvr3-e1",
+        "repetidos": 1,
+        "transicoes_de_trilha": 1,
+        "trilhas": [
+          1,
+          18
+        ],
+        "trilhas_adicionais": 1
+      },
+      {
+        "alertas": 0,
+        "atraso_s": null,
+        "criterio_inicio": null,
+        "detectado": false,
+        "detectado_sem_ambiguidade": false,
+        "id": "dvr3-e2",
+        "repetidos": 0,
+        "transicoes_de_trilha": 0,
+        "trilhas": [],
+        "trilhas_adicionais": 0
+      }
+    ],
+    "transicoes_de_trilha": 1,
+    "trilhas_adicionais": 1
+  },
+  "motivo": null,
+  "oficial": false,
+  "ressalva": null,
+  "tolerancia_s": 2.0,
+  "trilhas_distintas_nos_alertas": [
+    1,
+    18
+  ],
+  "versao_avaliador": 2,
+  "video": "DVR-3-Ch.0-1 ACESSO-BLINDEX.avi"
+}

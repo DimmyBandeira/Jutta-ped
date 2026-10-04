@@ -1,0 +1,35 @@
+{
+  "esquema": 2,
+  "video": "DVR-1-Ch.7-8 5-- PAV-Hall-ELEV SERVI.dav",
+  "sha256": "63bf6a2912e55e3dd44ae858ba234ac78dbcf72e01818eb924f6bd94e8027dd9",
+  "origem_revisao": "humana",
+  "status": "proposta_nao_confirmada",
+  "revisado": false,
+  "revisor": "",
+  "data": "",
+  "revisao_completa_do_video": false,
+  "procedencia": {
+    "confirmada": false,
+    "fonte": ""
+  },
+  "episodios": [],
+  "negativo_confirmado": false,
+  "instrucoes": "Veja linha_do_tempo.jpg e o video INTEIRO. Para cada trecho em que um alerta DEVERIA ocorrer, acrescente um episodio {id, inicio_s, fim_s, estado_esperado, observacao}. Se o video e um NEGATIVO, deixe episodios=[] e ponha negativo_confirmado=true. Informe a procedencia do arquivo. Para confirmar, use `bateria_referencia.py confirmar` ou preencha status=confirmada e revisado=true. Os alertas do sistema abaixo sao apoio; NAO sao rotulos.",
+  "alertas_do_sistema_para_apoio": [
+    {
+      "t_s": 15.667,
+      "estado": "CHILD_SEPARATED",
+      "trilha": 4
+    },
+    {
+      "t_s": 21.267,
+      "estado": "CHILD_SEPARATED",
+      "trilha": 20
+    },
+    {
+      "t_s": 31.133,
+      "estado": "CHILD_SEPARATED",
+      "trilha": 2
+    }
+  ]
+}

@@ -1,0 +1,120 @@
+{
+  "alertas": [
+    {
+      "confianca": 0.927734375,
+      "estado": "CHILD_SEPARATED",
+      "evidencias": {
+        "annotated": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\annotated\\20261004_161602_129__episodio__track_4__popup_alert__CHILD_SEPARATED_bbox.jpg",
+        "crop": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\crops\\20261004_161602_129__episodio__track_4__popup_alert__CHILD_SEPARATED_crop.jpg",
+        "frame": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\frames\\20261004_161602_129__episodio__track_4__popup_alert__CHILD_SEPARATED_frame.jpg",
+        "metadata": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\metadata\\20261004_161602_129__episodio__track_4__popup_alert__CHILD_SEPARATED.json"
+      },
+      "motivo": "Crianca persistentemente distante do adulto.",
+      "quadro": 235,
+      "t_s": 15.667,
+      "tipo": "popup_alert",
+      "trilha": 4
+    },
+    {
+      "confianca": 0.93701171875,
+      "estado": "CHILD_SEPARATED",
+      "evidencias": {
+        "annotated": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\annotated\\20261004_161603_535__episodio__track_20__popup_alert__CHILD_SEPARATED_bbox.jpg",
+        "crop": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\crops\\20261004_161603_535__episodio__track_20__popup_alert__CHILD_SEPARATED_crop.jpg",
+        "frame": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\frames\\20261004_161603_535__episodio__track_20__popup_alert__CHILD_SEPARATED_frame.jpg",
+        "metadata": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\metadata\\20261004_161603_535__episodio__track_20__popup_alert__CHILD_SEPARATED.json"
+      },
+      "motivo": "Companhia infantil insuficiente ou conflitante.",
+      "quadro": 319,
+      "t_s": 21.267,
+      "tipo": "popup_alert",
+      "trilha": 20
+    },
+    {
+      "confianca": 0.9326171875,
+      "estado": "CHILD_SEPARATED",
+      "evidencias": {
+        "annotated": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\annotated\\20261004_161606_135__episodio__track_2__popup_alert__CHILD_SEPARATED_bbox.jpg",
+        "crop": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\crops\\20261004_161606_135__episodio__track_2__popup_alert__CHILD_SEPARATED_crop.jpg",
+        "frame": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\frames\\20261004_161606_135__episodio__track_2__popup_alert__CHILD_SEPARATED_frame.jpg",
+        "metadata": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\metadata\\20261004_161606_135__episodio__track_2__popup_alert__CHILD_SEPARATED.json"
+      },
+      "motivo": "Companhia infantil insuficiente ou conflitante.",
+      "quadro": 467,
+      "t_s": 31.133,
+      "tipo": "popup_alert",
+      "trilha": 2
+    }
+  ],
+  "cobertura": {
+    "erro": null,
+    "integral": true,
+    "motivo_parada": "eof",
+    "motivos_nao_integral": [],
+    "quadros_analisados": 480,
+    "quadros_do_arquivo": 480,
+    "razao": 1.0,
+    "status_final": "finished",
+    "terminou_por_eof": true,
+    "timeout": false
+  },
+  "fps": 15.0,
+  "quadros_analisados": 480,
+  "quadros_do_arquivo": 480,
+  "sha256": "63bf6a2912e55e3dd44ae858ba234ac78dbcf72e01818eb924f6bd94e8027dd9",
+  "suprimidos": [
+    {
+      "confianca": 0.94384765625,
+      "estado": "CHILD_SEPARATED",
+      "evidencias": {
+        "annotated": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\annotated\\20261004_161602_198__episodio__track_4__popup_suppressed__CHILD_SEPARATED_bbox.jpg",
+        "crop": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\crops\\20261004_161602_198__episodio__track_4__popup_suppressed__CHILD_SEPARATED_crop.jpg",
+        "frame": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\frames\\20261004_161602_198__episodio__track_4__popup_suppressed__CHILD_SEPARATED_frame.jpg",
+        "metadata": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\metadata\\20261004_161602_198__episodio__track_4__popup_suppressed__CHILD_SEPARATED.json"
+      },
+      "motivo": "Crianca persistentemente distante do adulto.",
+      "quadro": 236,
+      "t_s": 15.733,
+      "tipo": "popup_suppressed",
+      "trilha": 4
+    },
+    {
+      "confianca": 0.93701171875,
+      "estado": "CHILD_SEPARATED",
+      "evidencias": {
+        "annotated": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\annotated\\20261004_161603_586__episodio__track_20__popup_suppressed__CHILD_SEPARATED_bbox.jpg",
+        "crop": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\crops\\20261004_161603_586__episodio__track_20__popup_suppressed__CHILD_SEPARATED_crop.jpg",
+        "frame": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\frames\\20261004_161603_586__episodio__track_20__popup_suppressed__CHILD_SEPARATED_frame.jpg",
+        "metadata": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\metadata\\20261004_161603_586__episodio__track_20__popup_suppressed__CHILD_SEPARATED.json"
+      },
+      "motivo": "Companhia infantil insuficiente ou conflitante.",
+      "quadro": 320,
+      "t_s": 21.333,
+      "tipo": "popup_suppressed",
+      "trilha": 20
+    },
+    {
+      "confianca": 0.9326171875,
+      "estado": "CHILD_SEPARATED",
+      "evidencias": {
+        "annotated": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\annotated\\20261004_161606_183__episodio__track_2__popup_suppressed__CHILD_SEPARATED_bbox.jpg",
+        "crop": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\crops\\20261004_161606_183__episodio__track_2__popup_suppressed__CHILD_SEPARATED_crop.jpg",
+        "frame": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\frames\\20261004_161606_183__episodio__track_2__popup_suppressed__CHILD_SEPARATED_frame.jpg",
+        "metadata": "C:\\Users\\drb-d\\AppData\\Local\\Temp\\bateria_episodios_hdt7nlc2\\evidence\\sessions\\20261004_161538_0c5c71\\metadata\\20261004_161606_183__episodio__track_2__popup_suppressed__CHILD_SEPARATED.json"
+      },
+      "motivo": "Companhia infantil insuficiente ou conflitante.",
+      "quadro": 468,
+      "t_s": 31.2,
+      "tipo": "popup_suppressed",
+      "trilha": 2
+    }
+  ],
+  "tempo_de_analise_s": 15.23,
+  "trilhas_distintas_nos_alertas": [
+    2,
+    4,
+    20
+  ],
+  "versao_avaliador": 2,
+  "video": "DVR-1-Ch.7-8 5-- PAV-Hall-ELEV SERVI.dav"
+}
