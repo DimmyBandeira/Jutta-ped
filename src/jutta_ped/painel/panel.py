@@ -29,6 +29,7 @@ from src.jutta_ped.especialistas.instalador import Instalador
 from src.jutta_ped.painel.config_service import ler_config
 from src.jutta_ped.painel.crypto import Cifra
 from src.jutta_ped.painel.db import Database
+from src.jutta_ped.painel.limite_corpo import LimiteCorpoUpload
 from src.jutta_ped.painel.eventos import PainelEventos
 from src.jutta_ped.painel.go2rtc import Go2rtcClient, Go2rtcProcesso, Go2rtcSync
 from src.jutta_ped.painel.servicos import GerenteIa, IaOrquestrador, PainelServicos, config_loader_para
@@ -144,6 +145,8 @@ def mount_panel(
     app.state.painel = servicos
     app.state.painel_db = database
     app.state.especialistas = Instalador(runtime_dir / "especialistas")
+    app.add_middleware(LimiteCorpoUpload, caminho=routes_especialistas.CAMINHO_UPLOAD, chave_estado="especialistas_upload_max",
+                       padrao=routes_especialistas.UPLOAD_MAX_PADRAO)
     app.state.painel_limitador = LimitadorLogin()
     app.add_middleware(
         SessionMiddleware,

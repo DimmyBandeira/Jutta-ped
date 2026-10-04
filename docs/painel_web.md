@@ -470,8 +470,10 @@ pacotes declarativos de especialista. Contrato do pacote e do instalador: [manua
 | `POST /painel/especialistas/{id}/{versao}/remover` | Remove uma versão inativa |
 | `POST /painel/especialistas/recuperar` | Conclui ou desfaz operações interrompidas |
 
-Segurança: token CSRF obrigatório em todo POST (formulário comum, campo `csrf_token`); o `Content-Length` acima do teto
-(600 MiB, `app.state.especialistas_upload_max`) é recusado com 413 antes de ler o corpo; o nome do arquivo enviado nunca é
+Segurança: token CSRF obrigatório em todo POST (formulário comum, campo `csrf_token`); o teto de upload (600 MiB, `app.state.especialistas_upload_max`) é aplicado por um middleware ASGI
+(`painel/limite_corpo.py`) **antes do parser multipart**: `Content-Length` acima do teto responde 413 sem ler o corpo, e sem
+`Content-Length` (ou com cabeçalho falso) os bytes recebidos são contados e a leitura é interrompida ao passar do teto
+(o FastAPI lê o corpo antes de resolver dependências, por isso não é uma dependência); o nome do arquivo enviado nunca é
 usado como caminho (o upload vai para `uploads/<uuid>.zip` e é apagado ao final); texto vindo do pacote é escapado na
 tela. Toda ação grava auditoria (`especialista_instalado`, `_instalacao_recusada`, `_ativado`, `_revertido`, `_removido`,
 `especialistas_recuperados`, e `*_falhou`). Pacote reprovado devolve 422 com a tabela de problemas do validador; operação

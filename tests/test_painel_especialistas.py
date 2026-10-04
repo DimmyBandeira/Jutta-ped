@@ -243,3 +243,160 @@ def test_operacoes_recentes_aparecem_na_tela(painel, tmp_path: Path) -> None:
     _enviar(client, _zip_bytes(tmp_path))
     html = client.get("/painel/especialistas").text
     assert "Operações recentes" in html and "instalado" in html
+
+
+# --- limite de upload ANTES do parser multipart --------------------------------------------------------------
+
+def _espiar_parser(monkeypatch) -> dict:
+    import starlette.requests as sr
+
+    chamadas = {"form": 0}
+    original = sr.Request._get_form
+
+    async def espia(self, *a, **k):
+        chamadas["form"] += 1
+        return await original(self, *a, **k)
+
+    monkeypatch.setattr(sr.Request, "_get_form", espia)
+    return chamadas
+
+
+def test_content_length_acima_do_limite_recusa_sem_acionar_o_parser(painel, tmp_path: Path, monkeypatch) -> None:
+    client, _, app = painel
+    _login(client)
+    token = _token(client, "/painel/especialistas")
+    app.state.especialistas_upload_max = 100
+    chamadas = _espiar_parser(monkeypatch)
+    r = _enviar(client, _zip_bytes(tmp_path), token=token)
+    assert r.status_code == 413 and chamadas["form"] == 0
+    uploads = app.state.especialistas.raiz / "uploads"
+    assert app.state.especialistas.listar() == {} and not (uploads.exists() and list(uploads.iterdir()))   # nada gravado
+
+
+def test_corpo_em_pedacos_sem_content_length_e_interrompido(painel, tmp_path: Path, monkeypatch) -> None:
+    client, _, app = painel
+    _login(client)
+    token = _token(client, "/painel/especialistas")
+    app.state.especialistas_upload_max = 1000
+    entregues = {"n": 0}
+
+    def corpo():
+        for _ in range(200):
+            entregues["n"] += 1
+            yield b"x" * 100
+
+    r = client.post("/painel/especialistas/instalar", content=corpo(),
+                    headers={"content-type": "multipart/form-data; boundary=zzz", "x-csrf-token": token})
+    assert r.status_code == 413
+    assert app.state.especialistas.listar() == {}
+
+
+def test_outras_rotas_e_metodos_nao_sao_limitados(painel, tmp_path: Path) -> None:
+    client, _, app = painel
+    _login(client)
+    app.state.especialistas_upload_max = 10
+    assert client.get("/painel/especialistas").status_code == 200
+    token = _token(client, "/painel/especialistas")
+    r = client.post("/painel/especialistas/recuperar", data={"csrf_token": token, "enchimento": "x" * 500})
+    assert r.status_code == 303
+
+
+def _asgi(app_interna, teto: int):
+    from src.jutta_ped.painel.limite_corpo import LimiteCorpoUpload
+
+    class _Estado:
+        especialistas_upload_max = teto
+
+    class _App:
+        state = _Estado()
+
+    mw = LimiteCorpoUpload(app_interna, caminho="/up", chave_estado="especialistas_upload_max", padrao=10**9)
+
+    async def chamar(headers: list, pedacos: list[bytes]):
+        enviados, respostas = [], []
+        fila = [{"type": "http.request", "body": p, "more_body": i < len(pedacos) - 1} for i, p in enumerate(pedacos)]
+
+        async def receive():
+            if not fila:
+                return {"type": "http.disconnect"}
+            enviados.append(1)
+            return fila.pop(0)
+
+        async def send(m):
+            respostas.append(m)
+
+        scope = {"type": "http", "method": "POST", "path": "/up", "headers": headers, "app": _App()}
+        await mw(scope, receive, send)
+        return len(enviados), respostas
+
+    return chamar
+
+
+def test_middleware_para_de_ler_o_corpo_ao_passar_do_teto() -> None:
+    import asyncio
+
+    recebido = {"bytes": 0}
+
+    async def interna(scope, receive, send):
+        while True:
+            m = await receive()
+            if m["type"] != "http.request":
+                break
+            recebido["bytes"] += len(m["body"])
+            if not m.get("more_body"):
+                break
+        await send({"type": "http.response.start", "status": 200, "headers": []})   # tentaria responder 200 depois
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    chamar = _asgi(interna, teto=250)
+    # sem Content-Length: 10 pedacos de 100 bytes; o teto de 250 estoura no terceiro
+    pulls, resp = asyncio.run(chamar([], [b"a" * 100] * 10))
+    status = [m["status"] for m in resp if m["type"] == "http.response.start"]
+    assert status == [413]                       # uma unica resposta: a do limite (a tentativa de 200 foi descartada)
+    assert pulls == 3 and recebido["bytes"] == 200   # leitura interrompida: 7 pedacos nunca foram pedidos; ao app so chegou <= teto
+
+
+def test_middleware_com_content_length_mentiroso_conta_os_bytes_reais() -> None:
+    import asyncio
+
+    async def interna(scope, receive, send):
+        while (await receive()).get("more_body"):
+            pass
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    chamar = _asgi(interna, teto=250)
+    _, resp = asyncio.run(chamar([(b"content-length", b"10")], [b"a" * 100] * 10))     # diz 10 bytes, manda 1000
+    assert [m["status"] for m in resp if m["type"] == "http.response.start"] == [413]
+
+
+def test_middleware_content_length_acima_do_teto_nem_le_o_corpo() -> None:
+    import asyncio
+
+    chamado = {"app": False}
+
+    async def interna(scope, receive, send):
+        chamado["app"] = True
+
+    chamar = _asgi(interna, teto=250)
+    pulls, resp = asyncio.run(chamar([(b"content-length", b"999999")], [b"a" * 100]))
+    assert pulls == 0 and not chamado["app"] and resp[0]["status"] == 413
+
+
+def test_middleware_corpo_dentro_do_teto_passa_integro() -> None:
+    import asyncio
+
+    visto = {"bytes": 0}
+
+    async def interna(scope, receive, send):
+        while True:
+            m = await receive()
+            visto["bytes"] += len(m.get("body", b""))
+            if not m.get("more_body"):
+                break
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    chamar = _asgi(interna, teto=1000)
+    _, resp = asyncio.run(chamar([], [b"a" * 100] * 5))
+    assert visto["bytes"] == 500 and resp[0]["status"] == 204

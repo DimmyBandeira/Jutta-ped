@@ -33,11 +33,20 @@ permissões finas (apenas admin), assinatura de pacotes.
   WebEngine do menu do admin passa com o novo item.
 * **Não** foi feita revisão visual da tela num navegador: o HTML foi validado por testes de resposta, não por captura.
 
+## Correção após revisão externa (04/10/2026)
+
+O limite de upload era uma dependência do FastAPI, que roda **depois** de o corpo multipart ser lido (reproduzido: 413
+com o parser já acionado e o arquivo recebido). Foi substituído por um middleware ASGI (`painel/limite_corpo.py`):
+recusa por `Content-Length` sem ler o corpo; sem o cabeçalho (ou com valor falso) conta os bytes e interrompe a
+leitura ao passar do teto (entrega `http.disconnect` ao aplicativo e descarta qualquer resposta posterior). Testes:
+parser multipart não acionado (espiado), corpo em pedaços, cabeçalho mentiroso, contagem exata de leituras (3 de 10
+pedaços), outras rotas e corpo dentro do teto intactos.
+
 ## Limitações
 
 * Ativar não afeta a análise: o motor ainda não lê o especialista ativo.
-* Upload de até 600 MiB é tratado em memória/disco temporário pelo servidor antes da rota (o teto antecipado usa
-  `Content-Length`; uma requisição sem esse cabeçalho só é limitada ao copiar o arquivo).
+* Upload de até 600 MiB passa pelo parser multipart (disco temporário do servidor) antes da rota. O teto é aplicado
+  por middleware ASGI **antes do parser** (`Content-Length` e contagem de bytes recebidos; ver correção abaixo).
 * Instalação é síncrona (a requisição espera validar e extrair); pacotes grandes ocupam uma thread do servidor.
 * O painel usa um único `Instalador` por processo; vários processos do painel na mesma pasta se protegem pelo lock do SO.
 * Mensagens do serviço de instalação estão sem acento (convenção dos serviços); a tela as repete como recebidas.

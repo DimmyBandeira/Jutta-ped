@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -29,17 +29,10 @@ from src.jutta_ped.painel.models import Usuario
 
 MIB = 1024 * 1024
 UPLOAD_MAX_PADRAO = 600 * MIB
+CAMINHO_UPLOAD = "/painel/especialistas/instalar"   # limitado por painel.limite_corpo (antes do parser multipart)
 
 
-async def limita_upload(request: Request) -> None:
-    """Recusa cedo (antes de ler o corpo) quando o Content-Length declarado excede o teto de upload."""
-    teto = getattr(request.app.state, "especialistas_upload_max", UPLOAD_MAX_PADRAO)
-    declarado = request.headers.get("content-length")
-    if declarado and declarado.isdigit() and int(declarado) > teto:
-        raise HTTPException(status_code=413, detail=f"Arquivo maior que o limite de {teto // MIB} MiB.")
-
-
-router = APIRouter(prefix="/painel/especialistas", dependencies=[Depends(limita_upload), Depends(verifica_csrf)])
+router = APIRouter(prefix="/painel/especialistas", dependencies=[Depends(verifica_csrf)])
 
 _STATUS = {COD_REPROVADO: 422, COD_CONFLITO: 409, COD_BLOQUEIO: 409, COD_EM_USO: 409}
 
