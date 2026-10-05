@@ -128,7 +128,10 @@ class PersonCropSpecialistPipeline:
         from ultralytics import YOLO
 
         if model_path.is_dir() or model_path.suffix.lower() == ".xml":
-            return YOLO(str(model_path), task="detect")
+            from src.jutta_ped.dispositivo import ModeloOpenVinoEstrito
+
+            # `device="cpu"` no Ultralytics vira OpenVINO AUTO (pode compilar na GPU): o contrato de dispositivo e honrado aqui
+            return ModeloOpenVinoEstrito(YOLO(str(model_path), task="detect"))
         return YOLO(str(model_path))
 
     # Reserva do MESTRE: (frame_index, pessoas, detector_reaproveitado) deixada por `detectar_pessoas` para o MESMO frame e

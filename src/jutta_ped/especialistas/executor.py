@@ -87,6 +87,7 @@ class EspecialistaCarregado:
     modelos: dict[str, ModeloCarregado]
     hashes: dict[str, str]
     identidade: str
+    fallbacks: dict[str, list[str]] = field(default_factory=dict)   # por modelo: por que dispositivos MAIS preferidos nao foram usados
 
 
 def calcular_config_hash(hashes_modelos: dict[str, str], parametros_efetivos: dict[str, float]) -> str:
@@ -136,8 +137,10 @@ def contrato_leve(instalador: Instalador, pid: str) -> dict[str, Any] | None:
 
 class Executor:
     def __init__(self, instalador: Instalador, backends: dict[str, Backend] | None = None, *,
-                 cuda_probe: Callable[[], bool] = cuda_disponivel) -> None:
+                 cuda_probe: Callable[[], bool] = cuda_disponivel, dispositivos_permitidos: tuple[str, ...] | None = None) -> None:
         self.instalador = instalador
+        # Restricao do HOST (ex.: ("cpu",)): so esses dispositivos podem ser usados, SEM fallback para outro. None = a lista do manifesto.
+        self.dispositivos_permitidos = dispositivos_permitidos
         self._backends = backends
         self._cuda_probe = cuda_probe
         self._carregados: dict[str, EspecialistaCarregado] = {}
@@ -155,6 +158,13 @@ class Executor:
 
     def _candidatos(self, modelo: dict[str, Any]) -> list[str]:
         saida: list[str] = []
+        if self.dispositivos_permitidos is not None:
+            declarados = set(modelo["dispositivos"])
+            for d in self.dispositivos_permitidos:
+                if d not in declarados:
+                    raise ErroExecucao(E_MODELO, f"o host exige '{d}' mas o modelo '{modelo['id']}' declara apenas {modelo['dispositivos']}")
+                saida.append({"cuda": "cuda:0", "intel_gpu": "intel:gpu"}.get(d, d))
+            return saida
         for d in modelo["dispositivos"]:
             if d == "cuda" and modelo["formato"] == "pt" and self._cuda_probe():
                 saida.append("cuda:0")
@@ -168,6 +178,7 @@ class Executor:
         manifesto = json.loads((ativo.pasta / "manifest.json").read_text(encoding="utf-8"))
         formato = manifesto["entrada"]["formato"]
         modelos: dict[str, ModeloCarregado] = {}
+        fallbacks: dict[str, list[str]] = {}
         for m in manifesto["modelos"]:
             backend = self._backend(m["formato"])
             falhas: list[str] = []
@@ -175,6 +186,7 @@ class Executor:
             for dispositivo in self._candidatos(m):
                 try:
                     carregado = backend.carregar(m, ativo.pasta, dispositivo, formato)
+                    fallbacks[m["id"]] = list(falhas)        # dispositivos preferidos que falharam antes deste (vazio = sem fallback)
                     break
                 except FormatoNaoSuportado as exc:       # independe do dispositivo: nao adianta tentar outro
                     raise ErroExecucao(E_MODELO, f"formato de entrada nao suportado por este executor: {exc}") from None
@@ -185,7 +197,7 @@ class Executor:
             modelos[m["id"]] = carregado
         self._conferir_classes(manifesto, modelos)
         hashes = {m["id"]: m["sha256"] for m in manifesto["modelos"]}
-        return EspecialistaCarregado(ativo.id, ativo.versao, ativo.pasta, manifesto, modelos, hashes, ativo.identidade)
+        return EspecialistaCarregado(ativo.id, ativo.versao, ativo.pasta, manifesto, modelos, hashes, ativo.identidade, fallbacks)
 
     @staticmethod
     def _conferir_classes(manifesto: dict[str, Any], modelos: dict[str, ModeloCarregado]) -> None:
@@ -226,6 +238,8 @@ class Executor:
     def info(self, pid: str) -> dict[str, Any]:
         e = self._resolver(pid)
         return {"id": e.id, "versao": e.versao, "dispositivos": {k: m.dispositivo for k, m in e.modelos.items()},
+                "dispositivos_efetivos": {k: getattr(m, "dispositivo_efetivo", None) for k, m in e.modelos.items()},      # None = ainda nao inferiu / nao se sabe
+                "fallbacks": e.fallbacks,
                 "atributos": [a["nome"] for a in e.manifesto["atributos"]]}
 
     def contrato(self, pid: str) -> dict[str, Any]:

@@ -648,6 +648,8 @@ class GerenteSombra:
                 descartar = None
                 s.porta.definir_alvo(despacho)
                 antigo, s.despacho, s.motor, s.assinatura, s.base, s.erro, s.montagem = s.despacho, despacho, motor, assinatura, "montada", None, mid
+                if antigo is not None:
+                    s.buffer.limpar()            # config/receita nova: o feed mostra so a vigente (a anterior fica no rastro, como na troca de geracao)
         if descartar is not None:
             descartar.parar(timeout=1.0)
         self._aposentar(antigo)

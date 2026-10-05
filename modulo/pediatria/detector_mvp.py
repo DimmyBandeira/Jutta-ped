@@ -323,6 +323,20 @@ class PediatricsDetectorMvpRunner:
     _SPECIALIST_ROLE_MAP: dict[str, str] = {"adult": "adult", "child": "child"}
     _GENERIC_ROLE_MAP: dict[str, str] = {"person": "adult"}
 
+    @staticmethod
+    def _nomes_das_classes(model: Any) -> Any:
+        """`model.names` de um modelo exportado (OpenVINO) monta um preditor com `device=None`; o Ultralytics escolhe CUDA e falha
+        ("Invalid device id") se outra inferencia do processo ja rodou com device="cpu" (que oculta a GPU). So a leitura das classes usa
+        CPU; o dispositivo de inferencia continua sendo o passado em cada chamada. Modelos sem `overrides` (e `.pt`) nao mudam."""
+        overrides = getattr(model, "overrides", None)
+        if not isinstance(overrides, dict) or overrides.get("device") is not None:
+            return model.names
+        overrides["device"] = "intel:cpu" if type(model).__name__ == "ModeloOpenVinoEstrito" else "cpu"
+        try:
+            return model.names
+        finally:
+            overrides["device"] = None
+
     def __init__(
         self,
         model_path: str | Path,
@@ -337,7 +351,7 @@ class PediatricsDetectorMvpRunner:
         self.model = loader(str(path))
         self.names = {
             int(index): str(name).strip().lower()
-            for index, name in dict(self.model.names).items()
+            for index, name in dict(self._nomes_das_classes(self.model)).items()
         }
         available = set(self.names.values())
         if {"adult", "child"}.issubset(available):
@@ -361,7 +375,9 @@ class PediatricsDetectorMvpRunner:
 
         model_path = Path(path)
         if model_path.is_dir() or model_path.suffix.lower() == ".xml":
-            return YOLO(path, task="detect")
+            from src.jutta_ped.dispositivo import ModeloOpenVinoEstrito
+
+            return ModeloOpenVinoEstrito(YOLO(path, task="detect"))
         return YOLO(path)
 
     def run(
