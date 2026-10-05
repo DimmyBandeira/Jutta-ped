@@ -188,6 +188,22 @@ class PediatriaService:
                 priority.add(child.nearest_adult_track_id)
         return priority
 
+    def observar_mestre(self, frame: Any, frame_id: int) -> list[PediatricDetection] | None:
+        """Passagem do MESTRE (detector/rastreador de pessoas) para o frame, sem classificador, companhia nem regras pediatricas.
+
+        O resultado fica reservado: `process_frame` do mesmo `frame_id` o reaproveita (um unico detector por quadro).
+        Devolve None quando nao ha mestre (pipeline de crop desligado/ausente ou sessao nao iniciada).
+        """
+        if not (self.config.person_crop_pipeline and self.crop_pipeline is not None):
+            return None
+        return self.crop_pipeline.detectar_pessoas(
+            frame,
+            frame_index=frame_id,
+            device=self.config.device,
+            person_confidence=self.config.person_confidence,
+            detector_stride_frames=self.config.detector_stride_frames,
+        )
+
     def process_frame(self, frame: Any, *, frame_id: int) -> PediatriaFrameResult:
         if self.runner is None:
             raise RuntimeError("PediatriaService.start_session precisa ser chamado antes.")

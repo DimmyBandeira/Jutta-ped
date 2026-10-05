@@ -340,6 +340,9 @@ def _checar_arquivos_e_hashes(m: dict[str, Any], fonte: Fonte, caminhos: set[str
             if not filhos:
                 rel.adicionar(3, "arquivo_ausente", arq, "pasta OpenVINO inexistente ou vazia")
                 continue
+            if not arq.rstrip("/").endswith("_openvino_model"):
+                rel.adicionar(3, "openvino_nome", arq, "a pasta OpenVINO deve se chamar '*_openvino_model' (convencao do Ultralytics: com outro nome o modelo nao carrega)")
+                continue
             nomes = [c[len(arq) + 1:] for c in filhos]
             xmls = [n for n in nomes if "/" not in n and n.endswith(".xml")]
             bins = [n for n in nomes if "/" not in n and n.endswith(".bin")]

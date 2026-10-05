@@ -131,7 +131,36 @@ class PersonCropSpecialistPipeline:
             return YOLO(str(model_path), task="detect")
         return YOLO(str(model_path))
 
+    # Reserva do MESTRE: (frame_index, pessoas, detector_reaproveitado) deixada por `detectar_pessoas` para o MESMO frame e
+    # consumida (uma vez) por `detect_and_classify`. Atributo de classe: pipelines montados sem __init__ (testes) seguem sem reserva.
+    _reserva: tuple[int, list[PediatricDetection], bool] | None = None
+
+    def detectar_pessoas(
+        self,
+        frame: Any,
+        *,
+        frame_index: int,
+        device: str,
+        person_confidence: float,
+        detector_stride_frames: int = 1,
+    ) -> list[PediatricDetection]:
+        """Passagem do MESTRE: so o detector/rastreador de pessoas (respeitando o stride), sem especialista nem cache de papeis.
+
+        O resultado fica reservado para este mesmo `frame_index`; `detect_and_classify` do mesmo frame o consome em vez de
+        rodar o detector outra vez (um unico detector por quadro, compartilhado com a Cena do motor).
+        """
+        persons, reused = self._run_or_reuse_detector(
+            frame,
+            frame_index=frame_index,
+            device=device,
+            person_confidence=person_confidence,
+            detector_stride_frames=max(1, int(detector_stride_frames)),
+        )
+        self._reserva = (frame_index, persons, reused)
+        return list(persons)
+
     def reset(self) -> None:
+        self._reserva = None
         self._cache.clear()
         self._last_persons = None
         self._last_detector_frame = None
@@ -160,13 +189,17 @@ class PersonCropSpecialistPipeline:
         specialist_budget_per_frame: int | None = None,
         priority_track_ids: set[int] | None = None,
     ) -> tuple[list[PediatricDetection], list[PediatricDetection]]:
-        persons, detector_reused = self._run_or_reuse_detector(
-            frame,
-            frame_index=frame_index,
-            device=device,
-            person_confidence=person_confidence,
-            detector_stride_frames=max(1, int(detector_stride_frames)),
-        )
+        reserva, self._reserva = self._reserva, None  # consome (e limpa) a reserva do mestre, haja ou nao match
+        if reserva is not None and reserva[0] == frame_index:
+            persons, detector_reused = list(reserva[1]), reserva[2]
+        else:
+            persons, detector_reused = self._run_or_reuse_detector(
+                frame,
+                frame_index=frame_index,
+                device=device,
+                person_confidence=person_confidence,
+                detector_stride_frames=max(1, int(detector_stride_frames)),
+            )
         self._prune_stale(frame_index)
         self.last_trace = {}
 

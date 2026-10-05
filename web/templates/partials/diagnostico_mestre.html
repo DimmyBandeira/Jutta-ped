@@ -1,0 +1,45 @@
+{# Diagnostico do mestre. Contexto: diag = DiagnosticoMestre.resumo() + estado (desligado|aguardando|ativo).
+   Imagens em memoria; URL ABSOLUTA derivada do caminho da requisicao (pagina ou /resumo): relativa resolveria contra o documento. #}
+{% set d = diag or {} %}
+<span id="diag-tem-quadro" data-q="{{ d.quadro_id if d.quadro_id is not none and d.quadro_id is defined else '' }}" hidden></span>
+{% set base_diag = (request.url.path | replace('/resumo', '')) if request is defined else '' %}
+<section class="secao" aria-labelledby="tit-diag-resumo">
+  <h4 id="tit-diag-resumo">Cena atual</h4>
+  {% if d.estado == 'desligado' %}
+  <p class="aviso">Diagnóstico desligado.</p>
+  {% elif d.quadro_id is none or d.quadro_id is not defined %}
+  <p class="aviso">Aguardando a primeira cena do mestre (a análise de IA da câmera precisa estar rodando).</p>
+  {% else %}
+  <p>Quadro <strong>{{ d.quadro_id }}</strong> · geração {{ d.geracao }} · {{ d.largura }}×{{ d.altura }} px
+     · recebido há {{ '%.1f'|format(d.recebido_ha_s) if d.recebido_ha_s is not none else '—' }} s
+     · {{ (d.sujeitos or [])|length }} pessoa(s)
+     {% if d.contadores %}· cenas {{ d.contadores.cenas }} (vazias {{ d.contadores.vazias }}, recusadas {{ d.contadores.recusadas }}){% endif %}</p>
+  {% if d.roi %}<p class="aviso">ROI: ({{ d.roi.x1 }}, {{ d.roi.y1 }}) → ({{ d.roi.x2 }}, {{ d.roi.y2 }}) · critério {{ d.roi.criterio }}</p>{% else %}<p class="aviso">ROI: quadro inteiro.</p>{% endif %}
+  {% if not d.sujeitos %}
+  <div class="vazio">Cena vazia: nenhuma pessoa detectada neste quadro. A cena vazia também avança o tempo; ausência de pessoa não é resultado negativo de nenhum especialista.</div>
+  {% else %}
+  <div class="tabela-wrap">
+    <table class="tabela-cards">
+      <thead><tr><th scope="col">Trilha</th><th scope="col">Caixa no quadro (px)</th><th scope="col">Conf.</th><th scope="col">Região</th><th scope="col">Recorte</th><th scope="col">Folgas (px)</th></tr></thead>
+      <tbody>
+      {% for s in d.sujeitos %}
+      <tr>
+        <td data-rotulo="Trilha"><strong>{{ s.trilha_id }}</strong> <span class="aviso">{{ s.classe }}</span></td>
+        <td data-rotulo="Caixa">{% for v in s.bbox_xyxy %}{{ '%.0f'|format(v) }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+        <td data-rotulo="Conf.">{{ '%.0f'|format(s.confianca * 100) if s.confianca is not none else '—' }}%</td>
+        <td data-rotulo="Região">{% if s.na_roi %}<span class="badge online">dentro</span>{% else %}<span class="badge neutro">fora</span>{% endif %}</td>
+        <td data-rotulo="Recorte">
+          {% if s.recorte %}
+          <img src="{{ base_diag }}/recorte/{{ s.trilha_id }}.jpg?q={{ d.quadro_id }}" alt="Recorte da trilha {{ s.trilha_id }}" width="64" loading="lazy" style="vertical-align:middle;border-radius:6px">
+          {{ s.recorte.tamanho[0] }}×{{ s.recorte.tamanho[1] }} · origem ({{ s.recorte.origem_xy[0] }}, {{ s.recorte.origem_xy[1] }})
+          {% else %}<span class="aviso">{{ s.motivo_sem_recorte or 'sem recorte' }}</span>{% endif %}
+        </td>
+        <td data-rotulo="Folgas">{% if s.recorte and s.recorte.folgas_px %}esq {{ s.recorte.folgas_px.esq }} · dir {{ s.recorte.folgas_px.dir }} · topo {{ s.recorte.folgas_px.topo }} · base {{ s.recorte.folgas_px.base }}{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  {% endif %}
+</section>

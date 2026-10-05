@@ -1,0 +1,30 @@
+{
+  "video": "stream-normal.mp4",
+  "sha256": "ff1c41586483d8d4feec4eb353d09739ca13a8f1c3444212e43a65451ca02929",
+  "origem_revisao": "ia",
+  "status": "proposta_nao_confirmada",
+  "revisado": false,
+  "revisor": "Codex (IA)",
+  "data": "2026-10-04",
+  "revisao_completa_do_video": false,
+  "metodo": {
+    "tipo": "folhas_de_contato",
+    "passo_quadros": 8,
+    "limite": "Amostragem visual distribuida pela duracao; nao equivale a revisao humana integral. Ver revisao_codex.md."
+  },
+  "episodios": [],
+  "observacao": "Candidato negativo de sanidade (13,167 s). Analise v2 integral ja realizada: zero alertas. Falta confirmacao humana e de procedencia.",
+  "esquema": 2,
+  "revisao_cega": false,
+  "procedencia": {
+    "confirmada": false,
+    "fonte": "",
+    "tipo": "",
+    "confirmado_por": ""
+  },
+  "derivada_de_proposta": {
+    "arquivo": "docs/referencia/2026-10-04/propostas_ia/negativo_stream_normal.json",
+    "sha256": "bee7669e265b7d6a4084c711a12b4197c612e081abe000f5a1f8f0ea04969c45"
+  },
+  "negativo_confirmado": false
+}

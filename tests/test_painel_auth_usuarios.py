@@ -167,7 +167,8 @@ def test_navegacao_do_admin_mostra_links_admin(painel):
     client, _ = painel
     _login(client)
     html = client.get("/painel/monitoramento").text
-    assert "/painel/usuarios" in html and "/painel/configuracoes" in html and "/painel/destinos" in html
+    assert "/painel/usuarios" in html and "/painel/configuracoes" in html and "/painel/receitas" in html and "/painel/processamento" in html
+    assert "/painel/destinos" not in html      # pagina ainda em construcao: fora do menu
 
 
 # ---------------------------------------------------------------- CRUD usuarios

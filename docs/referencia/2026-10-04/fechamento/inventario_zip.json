@@ -1,0 +1,172 @@
+{
+  "arquivo": "videos/5° ANDAR.zip",
+  "sha256": "8a75e537f48094153e4b725a1e9c7b93a0f9fcb9b0c07f517590d5f5b8fbd7d9",
+  "entradas": [
+    {
+      "arquivo_zip": "5° ANDAR.zip",
+      "entrada": "5° ANDAR/AVI/DVR 1-Ch.7-8 5-- PAV Hall ELEV SERVI--O-2026-06-09-13-54-00_20260609135400_20260609135420.avi",
+      "sha256": "7ce75949669b12a296d87928c12344ddabc4f8163ca85ee711d1d6b7c6fec6ea",
+      "bytes": 2374902,
+      "fps": 15.0,
+      "quadros": 270.0,
+      "duracao_s": 18.0
+    },
+    {
+      "arquivo_zip": "5° ANDAR.zip",
+      "entrada": "5° ANDAR/AVI/DVR 1-Ch.7-8 5-- PAV Hall ELEV SERVI--O-2026-06-09-14-35-34_20260609143533_20260609143553.avi",
+      "sha256": "5f4d2312953f1ffe8488aa60b5eaec1bf0074fc74c3ef6718c13d505cc1682db",
+      "bytes": 2366514,
+      "fps": 15.0,
+      "quadros": 270.0,
+      "duracao_s": 18.0
+    },
+    {
+      "arquivo_zip": "5° ANDAR.zip",
+      "entrada": "5° ANDAR/AVI/DVR 1-Ch.7-8 5-- PAV Hall ELEV SERVI--O-2026-06-09-15-26-00_20260609152559_20260609152626.avi",
+      "sha256": "dce8ef4a6eece9294e4b7d9338f186536fb03a58dfd2e9d720854ba002d15bce",
+      "bytes": 3183406,
+      "fps": 15.0,
+      "quadros": 360.0,
+      "duracao_s": 24.0
+    },
+    {
+      "arquivo_zip": "5° ANDAR.zip",
+      "entrada": "5° ANDAR/AVI/DVR 1-Ch.7-8 5-- PAV Hall ELEV SERVI--O-2026-06-09-16-05-30_20260609160530_20260609160602.avi",
+      "sha256": "bac53e462949392794837782f8ef76637581d65e5278803b3d39e1ac8baed349",
+      "bytes": 3986560,
+      "fps": 15.0,
+      "quadros": 450.0,
+      "duracao_s": 30.0
+    },
+    {
+      "arquivo_zip": "5° ANDAR.zip",
+      "entrada": "5° ANDAR/AVI/DVR 1-Ch.7-8 5-- PAV Hall ELEV SERVI--O-2026-06-15-11-55-44_20260615115544_20260615115603.avi",
+      "sha256": "c740358351aff1a82386b3f19ec8515b1e04a15019add596e8677b321b69fca5",
+      "bytes": 2368438,
+      "fps": 15.0,
+      "quadros": 270.0,
+      "duracao_s": 18.0
+    },
+    {
+      "arquivo_zip": "5° ANDAR.zip",
+      "entrada": "5° ANDAR/AVI/DVR 1-Ch.7-8 5-- PAV Hall ELEV SERVI--O-2026-06-15-13-22-40_20260615132239_20260615132259.avi",
+      "sha256": "dd3d07d43b9d602f5d7bc7dcd44c4a7df8e4399e8ddf45c0c5c4b83c92ee40c6",
+      "bytes": 2365150,
+      "fps": 15.0,
+      "quadros": 270.0,
+      "duracao_s": 18.0
+    },
+    {
+      "arquivo_zip": "5° ANDAR.zip",
+      "entrada": "5° ANDAR/AVI/DVR 1-Ch.7-8 5-- PAV Hall ELEV SERVI--O-2026-06-15-13-53-24_20260615135324_20260615135339.avi",
+      "sha256": "2882e4407afd7eae3b4cc86da938514e1dd47b299d33d4386dc202455ada8f9a",
+      "bytes": 1751680,
+      "fps": 15.0,
+      "quadros": 210.0,
+      "duracao_s": 14.0
+    },
+    {
+      "arquivo_zip": "5° ANDAR.zip",
+      "entrada": "5° ANDAR/AVI/DVR 1-Ch.7-8 5-- PAV Hall ELEV SERVI--O-2026-06-15-14-11-34_20260615141133_20260615141153.avi",
+      "sha256": "2cb4ecc295199da714a809cf0fb5c8b2a82c07dfcd3f8e09b3b17dc9f6435f94",
+      "bytes": 2393168,
+      "fps": 15.0,
+      "quadros": 270.0,
+      "duracao_s": 18.0
+    },
+    {
+      "arquivo_zip": "5° ANDAR.zip",
+      "entrada": "5° ANDAR/AVI/DVR 1-Ch.7-8 5-- PAV Hall ELEV SERVI--O-2026-06-15-14-15-30_20260615141530_20260615141550.avi",
+      "sha256": "71b92207776cc0c5238ec9c64053b20f5762c2a4f1851bd27554ffe935eaeec9",
+      "bytes": 2332840,
+      "fps": 15.0,
+      "quadros": 270.0,
+      "duracao_s": 18.0
+    },
+    {
+      "arquivo_zip": "5° ANDAR.zip",
+      "entrada": "5° ANDAR/AVI/DVR 1-Ch.7-8 5-- PAV Hall ELEV SERVI--O-2026-06-15-14-25-00_20260615142459_20260615142519.avi",
+      "sha256": "a0abdbcfb28123061b0d1cc6157fad4cde0d876e0316fa271f9ea4591d91268d",
+      "bytes": 2388762,
+      "fps": 15.0,
+      "quadros": 270.0,
+      "duracao_s": 18.0
+    },
+    {
+      "arquivo_zip": "5° ANDAR.zip",
+      "entrada": "5° ANDAR/AVI/DVR 1-Ch.7-8 5-- PAV Hall ELEV SERVI--O-2026-06-15-15-56-45_20260615155644_20260615155702.avi",
+      "sha256": "0184229a58743b1b922c71d0cd7e4bb1a99de74560e423d6db9e6045d068f7d3",
+      "bytes": 2125684,
+      "fps": 15.0,
+      "quadros": 240.0,
+      "duracao_s": 16.0
+    },
+    {
+      "arquivo_zip": "5° ANDAR.zip",
+      "entrada": "5° ANDAR/DVR 1-Ch.7-8 5-- PAV Hall ELEV SERVI--O-2026-06-09-13-54-00.dav",
+      "sha256": "4897a6633a92dc7aceb939ff98e10e6a9cdf5fdd50222f4f296a895a22a47595",
+      "bytes": 2645394
+    },
+    {
+      "arquivo_zip": "5° ANDAR.zip",
+      "entrada": "5° ANDAR/DVR 1-Ch.7-8 5-- PAV Hall ELEV SERVI--O-2026-06-09-14-35-34.dav",
+      "sha256": "44a4c14d1d62d3a1f8434fed3bf4dd91d6658cbe1064995695780e5799389267",
+      "bytes": 2634664
+    },
+    {
+      "arquivo_zip": "5° ANDAR.zip",
+      "entrada": "5° ANDAR/DVR 1-Ch.7-8 5-- PAV Hall ELEV SERVI--O-2026-06-09-15-26-00.dav",
+      "sha256": "11d3f07e7cf5c9b61e211b5a915ee41d84cbacff5d9c49bd8f74d7b82ee00fcd",
+      "bytes": 3445956
+    },
+    {
+      "arquivo_zip": "5° ANDAR.zip",
+      "entrada": "5° ANDAR/DVR 1-Ch.7-8 5-- PAV Hall ELEV SERVI--O-2026-06-09-16-05-30.dav",
+      "sha256": "63bf6a2912e55e3dd44ae858ba234ac78dbcf72e01818eb924f6bd94e8027dd9",
+      "bytes": 4250065
+    },
+    {
+      "arquivo_zip": "5° ANDAR.zip",
+      "entrada": "5° ANDAR/DVR 1-Ch.7-8 5-- PAV Hall ELEV SERVI--O-2026-06-15-11-55-44.dav",
+      "sha256": "62788b1231185c2dccedbcfcf2eef3553859f6945d45bbe5bbc2af99958fe2c4",
+      "bytes": 2641791
+    },
+    {
+      "arquivo_zip": "5° ANDAR.zip",
+      "entrada": "5° ANDAR/DVR 1-Ch.7-8 5-- PAV Hall ELEV SERVI--O-2026-06-15-13-22-40.dav",
+      "sha256": "74f83777a8042463f33c4c2ab12efef5163ca569384d660f068573ece4b96dfb",
+      "bytes": 2637094
+    },
+    {
+      "arquivo_zip": "5° ANDAR.zip",
+      "entrada": "5° ANDAR/DVR 1-Ch.7-8 5-- PAV Hall ELEV SERVI--O-2026-06-15-13-53-24.dav",
+      "sha256": "8b7059afc55025cd0e5a400b82cd4e52a4859ac52638af019ce301549f3ce2bc",
+      "bytes": 2008923
+    },
+    {
+      "arquivo_zip": "5° ANDAR.zip",
+      "entrada": "5° ANDAR/DVR 1-Ch.7-8 5-- PAV Hall ELEV SERVI--O-2026-06-15-14-11-34.dav",
+      "sha256": "67321e414a64cb710f6c6b523a84e0fb47f875a312de2da1e8a249894b4c3b17",
+      "bytes": 2659936
+    },
+    {
+      "arquivo_zip": "5° ANDAR.zip",
+      "entrada": "5° ANDAR/DVR 1-Ch.7-8 5-- PAV Hall ELEV SERVI--O-2026-06-15-14-15-30.dav",
+      "sha256": "bc251a2c935b9f73c36e9e3612c5c7d2e2caee4bc8d18fa52b64efac43c3a325",
+      "bytes": 2603228
+    },
+    {
+      "arquivo_zip": "5° ANDAR.zip",
+      "entrada": "5° ANDAR/DVR 1-Ch.7-8 5-- PAV Hall ELEV SERVI--O-2026-06-15-14-25-00.dav",
+      "sha256": "824a67db51934ad28623618a15bf5175c663e908685936f2655eab22c4f739c8",
+      "bytes": 2663216
+    },
+    {
+      "arquivo_zip": "5° ANDAR.zip",
+      "entrada": "5° ANDAR/DVR 1-Ch.7-8 5-- PAV Hall ELEV SERVI--O-2026-06-15-15-56-45.dav",
+      "sha256": "853b936f69ff3c12732fd2b336e0c4371301c19eaff1d9b485aee43526b29f23",
+      "bytes": 2396846
+    }
+  ],
+  "nota": "AVI e DAV podem representar a mesma captura; nao somar como exposicoes independentes."
+}

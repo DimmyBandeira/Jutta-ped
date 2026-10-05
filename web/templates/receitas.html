@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Receitas — Jutta Ped{% endblock %}
+{% block titulo_pagina %}Receitas{% endblock %}
+{% block acoes_pagina %}<a class="btn primary" href="/painel/receitas/nova">Nova receita</a>{% endblock %}
+{% block content %}
+<div class="mensagem aviso" role="note">
+  <strong>A sombra é diagnóstica.</strong> Ela observa e registra os veredictos de uma receita para conferência; <strong>não gera alertas</strong>, popups nem envios, e <strong>não substitui</strong> os alertas operacionais. Ativar uma receita para alertar ainda não está disponível.
+</div>
+
+{% if flash %}
+  {% set f_texto = flash.texto if flash.texto is defined else flash %}
+  <div class="mensagem {{ 'erro' if (flash.tipo is defined and flash.tipo != 'ok') else 'ok' }}" role="status">{{ f_texto }}</div>
+{% endif %}
+{% if erro %}<div class="mensagem erro" role="alert">{{ erro }}</div>{% endif %}
+
+<section class="secao" aria-labelledby="tit-lista-receitas">
+  <h4 id="tit-lista-receitas">Receitas cadastradas</h4>
+  <p class="aviso" style="margin-top:0">Cada alteração cria uma <strong>nova versão imutável</strong>; versões antigas não mudam. Receitas do formulário (contrato 1) avaliam <strong>uma trilha por vez</strong>; relações entre trilhas e persistência no tempo existem no <strong>contrato 2</strong> (importação por JSON, abaixo).</p>
+  {% for r in receitas or [] %}
+  <div class="item-receita">
+    <div class="form-linha" style="justify-content:space-between">
+      <div><strong>{{ r.nome }}</strong>{% if r.descricao %} <span class="aviso">— {{ r.descricao }}</span>{% endif %}</div>
+      {% if r.editavel is not defined or r.editavel %}<a class="btn pequeno" href="/painel/receitas/{{ r.id }}/editar">Nova versão</a>
+      {% else %}<span class="aviso" style="margin:0" title="{{ r.motivos_nao_editavel | join('; ') }}">Não editável no formulário (contrato {{ r.contrato }}): importe uma nova versão pelo JSON.</span>{% endif %}
+    </div>
+    {% if r.versoes %}
+    <ul class="versoes">
+      {% for v in r.versoes %}
+      <li>
+        <span class="badge neutro">v{{ v.versao }}</span>
+        <code title="{{ v.config_hash }}">{{ (v.config_hash or '')[:10] }}</code>
+        <span>{{ v.criado_em }}</span>
+        <span>por {{ v.criado_por or '—' }}</span>
+        {% if v.resumo %}<span class="aviso" style="margin:0">{{ v.resumo }}</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="aviso">Nenhuma versão.</p>{% endif %}
+  </div>
+  {% else %}
+  <div class="vazio">Nenhuma receita cadastrada. <a href="/painel/receitas/nova">Criar a primeira receita</a>.</div>
+  {% endfor %}
+</section>
+
+<section class="secao" aria-labelledby="tit-importar">
+  <h4 id="tit-importar">Importar definição (JSON)</h4>
+  <p class="aviso" style="margin-top:0">Para receitas com <strong>papéis, relações entre trilhas e persistência no tempo</strong> (contrato 2), que o formulário simples não edita. É validada contra os especialistas ativos e vira uma <strong>versão imutável</strong>; se o nome já existe, cria a próxima versão. Nada é gravado se houver erro. Continua tudo em <strong>sombra</strong>. Formato: <code>docs/etapas_motor/03b_cena_regras.md</code>.</p>
+  <form method="post" action="/painel/receitas/importar" class="painel" style="padding:.8rem 1rem">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="linha">
+      <div><label for="imp-nome">Nome</label><input id="imp-nome" name="nome" required maxlength="48" autocomplete="off"></div>
+      <div><label for="imp-desc">Descrição</label><input id="imp-desc" name="descricao" maxlength="200" autocomplete="off"></div>
+    </div>
+    <label for="imp-json">Definição (JSON, sem <code>id</code>/<code>versao</code>)</label>
+    <textarea id="imp-json" name="definicao_json" rows="8" required spellcheck="false" style="width:100%;font-family:ui-monospace,monospace"></textarea>
+    <div class="rodape-form"><button class="btn primary" type="submit">Importar como nova versão</button></div>
+  </form>
+</section>
+
+<section class="secao" aria-labelledby="tit-cam-receitas">
+  <h4 id="tit-cam-receitas">Câmeras: receita associada e sombra</h4>
+  <p class="aviso" style="margin-top:0">Sombra: observa e registra, não gera alertas; desligada por padrão. Remover a receita de uma câmera desliga a sombra dela. Mudar estes controles não reinicia a análise operacional.</p>
+  <div class="tabela-wrap" style="margin-top:.6rem">
+  <table class="tabela-cards">
+    <thead><tr><th scope="col">Câmera</th><th scope="col">Receita (versão)</th><th scope="col">Validade</th><th scope="col">Sombra</th></tr></thead>
+    <tbody>
+    {% for c in cameras_receita or [] %}
+      <tr>
+        <td data-label="Câmera"><strong>{{ c.nome }}</strong></td>
+        <td data-label="Receita (versão)">
+          <form method="post" action="/painel/cameras/{{ c.id }}/receita" class="form-linha">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label class="so-leitor" for="rv-{{ c.id }}">Versão de receita para {{ c.nome }}</label>
+            <select id="rv-{{ c.id }}" name="receita_versao_id">
+              <option value="">sem receita</option>
+              {% for o in opcoes_versao or [] %}<option value="{{ o.id }}" {{ 'selected' if c.receita_versao_id is not none and o.id|string == c.receita_versao_id|string else '' }}>{{ o.label }}</option>{% endfor %}
+            </select>
+            <button class="btn pequeno" type="submit">Salvar</button>
+          </form>
+        </td>
+        <td data-label="Validade">
+          {% if not c.receita_versao_id %}<span class="badge neutro">sem receita</span>
+          {% elif c.valida %}<span class="badge online">válida</span>
+          {% else %}<span class="badge offline">inválida</span>
+            {% if c.motivos %}<ul class="aviso" style="margin:.3rem 0 0 1.1rem; padding:0">{% for m in c.motivos %}<li>{{ m }}</li>{% endfor %}</ul>{% endif %}{% endif %}
+        </td>
+        <td data-label="Sombra">
+          <form method="post" action="/painel/cameras/{{ c.id }}/sombra" class="interruptor-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% set pode = c.receita_versao_id and c.valida %}
+            {% if c.sombra_ativa %}
+              <input type="hidden" name="acao" value="desligar">
+              <span class="badge {{ 'offline' if c.sombra_estado == 'erro' else 'sombra' }}">{{ c.sombra_estado or 'ativa' }}</span>
+              <button class="btn pequeno" type="submit">Desligar sombra</button>
+            {% else %}
+              <input type="hidden" name="acao" value="ligar">
+              <span class="badge {{ 'offline' if c.sombra_estado == 'erro' else 'neutro' }}">{{ c.sombra_estado or 'desligada' }}</span>
+              <button class="btn pequeno" type="submit" {{ '' if pode else 'disabled aria-describedby=sd-' ~ c.id }}>Ligar sombra</button>
+              {% if not pode %}<span class="aviso" id="sd-{{ c.id }}" style="margin:0">{{ 'Associe uma receita válida para ligar.' if not c.receita_versao_id else 'A receita associada é inválida; corrija antes de ligar.' }}</span>{% endif %}
+            {% endif %}
+            {% if c.sombra_erro %}<span class="aviso" style="margin:0; color:var(--erro)">Erro: {{ c.sombra_erro }}</span>{% endif %}
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" class="vazio">Nenhuma câmera cadastrada.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endblock %}

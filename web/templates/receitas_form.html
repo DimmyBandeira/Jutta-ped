@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Nova versão de receita' if editando else 'Nova receita' }} — Jutta Ped{% endblock %}
+{% block titulo_pagina %}{{ 'Nova versão de receita' if editando else 'Nova receita' }}{% endblock %}
+{% block acoes_pagina %}<a class="btn" href="/painel/receitas">Voltar às receitas</a>{% endblock %}
+{% block content %}
+{% set f = form or {} %}
+{% set vinculos = f.vinculos or {} %}
+{% set conds = f.condicoes or [] %}
+{% if erro %}
+<div class="mensagem erro" role="alert">{{ erro }}
+  {% if problemas %}<ul>{% for p in problemas %}<li>{{ p }}</li>{% endfor %}</ul>{% endif %}
+</div>
+{% endif %}
+
+<form class="painel" method="post" action="{{ '/painel/receitas/' ~ f.rid ~ '/versoes' if editando else '/painel/receitas' }}" id="form-receita">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  <div class="mensagem aviso" role="note">
+    Uma receita deste formulário (contrato 1) avalia <strong>uma trilha por vez</strong>: as condições olham os atributos da mesma trilha no mesmo instante.
+    <strong>Relações entre trilhas</strong> (ex.: criança e adulto próximos) e <strong>persistência no tempo</strong> existem no contrato 2, que se importa por JSON na página de receitas (o formulário não as edita).
+    Salvar sempre cria uma versão nova e imutável; nada é gravado se houver erro.
+  </div>
+
+  <div class="cartao">
+    <h4>Identificação</h4>
+    <div class="linha">
+      <div>
+        <label for="f-nome">Nome</label>
+        <input id="f-nome" name="nome" value="{{ f.nome or '' }}" required maxlength="80" {{ 'readonly' if editando else '' }}>
+        {% if editando %}<p class="aviso">O nome não muda; esta alteração cria uma nova versão da mesma receita.</p>{% endif %}
+      </div>
+      <div>
+        <label for="f-comb">Combinação das condições</label>
+        <select id="f-comb" name="combinacao">
+          <option value="todas" {{ 'selected' if f.combinacao != 'alguma' else '' }}>Todas as condições (E)</option>
+          <option value="alguma" {{ 'selected' if f.combinacao == 'alguma' else '' }}>Alguma condição (OU)</option>
+        </select>
+      </div>
+    </div>
+    <label for="f-desc">Descrição</label>
+    <input id="f-desc" name="descricao" value="{{ f.descricao or '' }}" maxlength="240">
+  </div>
+
+  <div class="cartao">
+    <h4>Especialistas usados</h4>
+    {% if especialistas_ativos %}
+    <p class="aviso" style="margin-top:0">Somente especialistas com versão ativa aparecem aqui. Orçamento: tempo máximo de execução por quadro. Margem de recorte: folga ao redor da trilha.</p>
+    {% for e in especialistas_ativos %}
+    {% set v = vinculos.get(e.id) or {} %}
+    <fieldset class="vinculo" style="border:1px solid var(--border)">
+      <legend><strong>{{ e.nome }}</strong> <span class="aviso">{{ e.id }} · versão {{ e.versao }}</span></legend>
+      <label class="opcao-grande"><input type="checkbox" name="vinc_usar" value="{{ e.id }}" {{ 'checked' if v.usar else '' }}> Usar este especialista nesta receita</label>
+      <div class="linha">
+        <div><label for="orc-{{ loop.index }}">Orçamento (ms)</label>
+          <input id="orc-{{ loop.index }}" type="number" min="1" step="1" name="vinc_orcamento__{{ e.id }}" value="{{ v.orcamento_ms if v.orcamento_ms is not none and v.orcamento_ms is defined else '' }}"></div>
+        <div><label for="mar-{{ loop.index }}">Margem de recorte</label>
+          <input id="mar-{{ loop.index }}" type="number" min="0" step="any" name="vinc_margem__{{ e.id }}" value="{{ v.margem_recorte if v.margem_recorte is not none and v.margem_recorte is defined else '' }}"></div>
+      </div>
+    </fieldset>
+    {% endfor %}
+    {% else %}
+    <div class="vazio">Nenhum especialista ativo. Instale e ative um em <a href="/painel/especialistas">Especialistas</a>.</div>
+    {% endif %}
+  </div>
+
+  <div class="cartao">
+    <h4>Condições (até 4)</h4>
+    <p class="aviso" style="margin-top:0">Deixe em branco as linhas que não usar. Cada condição compara um atributo do especialista com um valor. Validade (ms) é opcional: por quanto tempo uma resposta anterior continua valendo.</p>
+    {% for i in range(4) %}
+    {% set c = conds[i] if i < conds|length else {} %}
+    <div class="cond-linha" data-cond>
+      <div><label for="ce-{{ i }}">Especialista</label>
+        <select id="ce-{{ i }}" name="cond_esp" data-cond-esp>
+          <option value="">— sem condição —</option>
+          {% for e in especialistas_ativos or [] %}<option value="{{ e.id }}" {{ 'selected' if c.especialista == e.id else '' }}>{{ e.nome }}</option>{% endfor %}
+        </select></div>
+      <div><label for="ca-{{ i }}">Atributo</label>
+        <select id="ca-{{ i }}" name="cond_attr" data-cond-attr>
+          <option value="">—</option>
+          {% for e in especialistas_ativos or [] %}
+          <optgroup label="{{ e.nome }}" data-esp="{{ e.id }}">
+            {% for a in e.atributos %}<option value="{{ a.nome }}" data-esp="{{ e.id }}" data-lista="dl-{{ e.id }}-{{ loop.index }}" {{ 'selected' if c.especialista == e.id and c.atributo == a.nome else '' }}>{{ a.nome }} ({{ a.tipo }})</option>{% endfor %}
+          </optgroup>
+          {% endfor %}
+        </select></div>
+      <div><label for="ci-{{ i }}">É igual a</label>
+        <input id="ci-{{ i }}" name="cond_igual" value="{{ c.igual if c.igual is defined and c.igual is not none else '' }}" list="dl-padrao" autocomplete="off" data-cond-igual></div>
+      <div><label for="cv-{{ i }}">Validade (ms, opcional)</label>
+        <input id="cv-{{ i }}" type="number" min="0" step="1" name="cond_validade" value="{{ c.validade_ms if c.validade_ms is defined and c.validade_ms is not none else '' }}"></div>
+    </div>
+    {% endfor %}
+    <datalist id="dl-padrao"><option value="sim"></option><option value="nao"></option></datalist>
+    {% for e in especialistas_ativos or [] %}{% for a in e.atributos %}
+    <datalist id="dl-{{ e.id }}-{{ loop.index }}">
+      {% if a.categorias %}{% for cat in a.categorias %}<option value="{{ cat }}"></option>{% endfor %}
+      {% else %}<option value="sim"></option><option value="nao"></option>{% endif %}
+    </datalist>
+    {% endfor %}{% endfor %}
+  </div>
+
+  <div class="rodape-form">
+    <button class="btn primary" type="submit">{{ 'Salvar nova versão' if editando else 'Criar receita' }}</button>
+    <a class="btn" href="/painel/receitas">Cancelar</a>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}<script src="/static/js/receitas.js"></script>{% endblock %}

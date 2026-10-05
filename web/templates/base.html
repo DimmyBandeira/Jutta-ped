@@ -1,3 +1,20 @@
+{% macro icone(nome) -%}
+{% if nome == 'monitor' %}<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>
+{% elif nome == 'camera' %}<path d="M4 7h3l2-2h6l2 2h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/>
+{% elif nome == 'alerta' %}<path d="M12 3 2.5 20h19L12 3z"/><path d="M12 10v4M12 17.2v.1"/>
+{% elif nome == 'espec' %}<path d="M12 2 3 7l9 5 9-5-9-5z"/><path d="m3 12 9 5 9-5M3 17l9 5 9-5"/>
+{% elif nome == 'receita' %}<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/>
+{% elif nome == 'proc' %}<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>
+{% elif nome == 'config' %}<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/>
+{% elif nome == 'usuarios' %}<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.3-5.5 6.5-5.5s5.9 1.9 6.5 5.5M16 4.8a3.5 3.5 0 0 1 0 6.4M18 14.8c1.9.7 3.2 2.4 3.5 5.2"/>
+{% endif %}
+{%- endmacro %}
+{% macro item(href, chave, rotulo, icone_nome) -%}
+<a href="{{ href }}" class="{{ 'ativo' if ativo == chave else '' }}"{% if ativo == chave %} aria-current="page"{% endif %}>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">{{ icone(icone_nome) }}</svg>
+  <span>{{ rotulo }}</span>
+</a>
+{%- endmacro %}
 <!doctype html>
 <html lang="pt-br">
 <head>
@@ -8,33 +25,56 @@
 <script src="/static/vendor/htmx-ext-sse.js"></script>
 <link rel="stylesheet" href="/static/css/app.css">
 </head>
-<body hx-ext="sse" hx-headers='{"X-CSRF-Token": "{{ csrf_token or '' }}"}'>
-<header>
-  <h1>Jutta Ped</h1>
-  {% if usuario_logado %}
-  <nav>
-    <a href="/painel/monitoramento" class="{{ 'ativo' if ativo == 'monitoramento' else '' }}">Monitoramento</a>
-    <a href="/painel/cameras" class="{{ 'ativo' if ativo == 'cameras' else '' }}">Câmeras</a>
-    <a href="/painel/relatorio" class="{{ 'ativo' if ativo == 'relatorio' else '' }}">Relatório</a>
-    {% if eh_admin_logado %}
-    <a href="/painel/destinos" class="{{ 'ativo' if ativo == 'destinos' else '' }}">Destinos</a>
-    <a href="/painel/especialistas" class="{{ 'ativo' if ativo == 'especialistas' else '' }}">Especialistas</a>
-    <a href="/painel/configuracoes" class="{{ 'ativo' if ativo == 'configuracoes' else '' }}">Configurações</a>
-    <a href="/painel/usuarios" class="{{ 'ativo' if ativo == 'usuarios' else '' }}">Usuários</a>
-    {% endif %}
-  </nav>
-  <div style="display:flex; align-items:center; gap:.9rem">
-    <span class="aviso" style="margin:0">{{ usuario_logado.login }}{% if eh_admin_logado %} <span class="badge neutro">administrador</span>{% endif %}</span>
-    <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn" type="submit">Sair</button></form>
+<body class="{{ '' if usuario_logado else 'sem-lateral' }}" hx-ext="sse" hx-headers='{"X-CSRF-Token": "{{ csrf_token or '' }}"}'>
+<a class="pular" href="#conteudo">Pular para o conteúdo</a>
+<div class="app{{ '' if usuario_logado else ' sem-lateral' }}">
+{% if usuario_logado %}
+<aside class="lateral" aria-label="Navegação principal">
+  <div class="lateral-topo">
+    <a class="marca" href="/painel/monitoramento">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4 6v5c0 5 3.4 8.4 8 10 4.6-1.6 8-5 8-10V6l-8-3z"/><path d="m9 12 2 2 4-4"/></svg>
+      <span>Jutta Ped</span>
+    </a>
+    <button type="button" class="menu-botao" id="menu-botao" aria-expanded="false" aria-controls="menu-lateral" aria-label="Abrir menu">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
   </div>
-  {% endif %}
-</header>
-<main class="{% block main_class %}{% endblock %}">
+  <div class="lateral-menu" id="menu-lateral">
+    <nav aria-label="Seções">
+      {{ item('/painel/monitoramento', 'monitoramento', 'Monitoramento', 'monitor') }}
+      {{ item('/painel/cameras', 'cameras', 'Câmeras', 'camera') }}
+      {{ item('/painel/relatorio', 'relatorio', 'Alertas', 'alerta') }}
+      {% if eh_admin_logado %}
+      <div class="grupo" role="presentation">Administração</div>
+      {{ item('/painel/especialistas', 'especialistas', 'Especialistas', 'espec') }}
+      {{ item('/painel/receitas', 'receitas', 'Receitas', 'receita') }}
+      {{ item('/painel/processamento', 'processamento', 'Processamento', 'proc') }}
+      {{ item('/painel/configuracoes', 'configuracoes', 'Configurações', 'config') }}
+      {{ item('/painel/usuarios', 'usuarios', 'Usuários', 'usuarios') }}
+      {% endif %}
+    </nav>
+    <div class="lateral-rodape">
+      <div class="usuario-info"><strong>{{ usuario_logado.login }}</strong><span>{{ 'Administrador' if eh_admin_logado else 'Usuário comum' }}</span></div>
+      <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn" type="submit">Sair</button></form>
+    </div>
+  </div>
+</aside>
+{% endif %}
+<div class="miolo">
+<main id="conteudo" class="{% block main_class %}{% endblock %}">
+{% if usuario_logado %}
+<div class="cab-pagina">
+  <h1>{% block titulo_pagina %}{% endblock %}</h1>
+  <div class="acoes-pagina">{% block acoes_pagina %}{% endblock %}</div>
+</div>
+{% endif %}
 {% block content %}{% endblock %}
 </main>
+</div>
+</div>
 
 {% if usuario_logado %}
-<!-- Popups de alerta: o servidor empurra <div class="popup"> via SSE (event: popup). -->
+<!-- Popups de alerta: o servidor empurra <div class="popup"> via SSE (event: popup). Única conexão SSE da página. -->
 <div id="popup-stack" aria-live="assertive"
      sse-connect="/painel/stream" sse-swap="popup" hx-swap="beforeend">
   <button type="button" id="popup-fechar-todos" class="btn" hidden onclick="dispensarTodos()">Fechar todos os alertas</button>
@@ -44,6 +84,7 @@
 </div>
 {% endif %}
 <script src="/static/js/popup.js"></script>
+<script src="/static/js/nav.js"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

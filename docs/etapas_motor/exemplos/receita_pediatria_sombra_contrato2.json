@@ -1,0 +1,24 @@
+{
+  "contrato": 2,
+  "vinculos": [
+    {"especialista": "br.jutta.papel-pessoa", "orcamento_ms": 1500, "margem_recorte": 0.1}
+  ],
+  "papeis": {
+    "crianca": {"classe": "person", "combinacao": "todas", "condicoes": [
+      {"especialista": "br.jutta.papel-pessoa", "atributo": "confianca_crianca", "minimo": 0.6},
+      {"especialista": "br.jutta.papel-pessoa", "atributo": "confianca_crianca", "maior_que": {"especialista": "br.jutta.papel-pessoa", "atributo": "confianca_adulto"}}
+    ]},
+    "adulto": {"classe": "person", "combinacao": "todas", "condicoes": [
+      {"especialista": "br.jutta.papel-pessoa", "atributo": "confianca_adulto", "minimo": 0.6},
+      {"especialista": "br.jutta.papel-pessoa", "atributo": "confianca_adulto", "maior_que": {"especialista": "br.jutta.papel-pessoa", "atributo": "confianca_crianca"}}
+    ]}
+  },
+  "relacoes": {
+    "sem_adulto_perto": {"tipo": "nenhum_proximo", "sujeito": "crianca", "outro": "adulto",
+                         "distancia": {"metrica": "ponto_de_apoio", "unidade": "altura_sujeito", "maximo": 1.75}}
+  },
+  "eventos": [
+    {"id": "crianca_sem_adulto_perto", "sujeito": "crianca", "quando_todas": ["sem_adulto_perto"],
+     "duracao_s": 3.0, "lacuna_max_s": 2.0, "perda_max_s": 10.0, "encerrar_negativo_s": 1.0}
+  ]
+}

@@ -79,16 +79,20 @@ def preparar_imagem(imagem: Any, formato: dict[str, Any]) -> Any:
 
 
 class ModeloUltralytics:
-    def __init__(self, modelo: Any, dispositivo: str, formato: dict[str, Any], tarefa: str) -> None:
+    def __init__(self, modelo: Any, dispositivo: str, formato: dict[str, Any], tarefa: str, lote_exportado: int | None = None) -> None:
         self._m, self.dispositivo, self._formato, self.tarefa = modelo, dispositivo, formato, tarefa
+        self._lote = lote_exportado          # OpenVINO exportado com batch fixo: o lote do executor e fatiado nesse tamanho
         self._imgsz = int(formato["altura"]) if tarefa == "classify" else [int(formato["altura"]), int(formato["largura"])]
         nomes = modelo.names
         self.nomes: list[str] = [str(nomes[i]) for i in sorted(nomes)] if isinstance(nomes, dict) else [str(n) for n in nomes]
 
     def inferir(self, imagens: list[Any]) -> list[dict[str, Any]]:
         preparadas = [preparar_imagem(im, self._formato) for im in imagens]
-        resultados = self._m.predict(preparadas, imgsz=self._imgsz, device=self.dispositivo, conf=CONFIANCA_MINIMA,
-                                     half=self.dispositivo.startswith("cuda"), verbose=False)
+        passo = self._lote or len(preparadas) or 1
+        resultados: list[Any] = []
+        for ini in range(0, len(preparadas), passo):
+            resultados += list(self._m.predict(preparadas[ini:ini + passo], imgsz=self._imgsz, device=self.dispositivo, conf=CONFIANCA_MINIMA,
+                                               half=self.dispositivo.startswith("cuda"), verbose=False))
         saida: list[dict[str, Any]] = []
         for r in resultados:
             nomes = r.names
@@ -131,6 +135,8 @@ class BackendUltralytics:
             exportado = (int(tamanho[0]), int(tamanho[1])) if isinstance(tamanho, (list, tuple)) and len(tamanho) == 2 else None
             validar_formato(formato, str(tarefa), exportado)
             m = YOLO(str(caminho), task=str(tarefa))
+            lote = meta.get("batch")
+            return ModeloUltralytics(m, dispositivo, formato, str(tarefa), int(lote) if isinstance(lote, int) and lote > 0 else None)
         else:
             m = YOLO(str(caminho))
             tarefa = str(getattr(m, "task", "detect"))

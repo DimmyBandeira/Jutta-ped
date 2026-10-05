@@ -1,13 +1,13 @@
 <div id="lista-cameras" hx-swap-oob="{{ 'true' if oob else 'false' }}">
 {% if cameras %}
-<table>
+<div class="tabela-wrap"><table>
   <thead><tr>
     <th>Nome</th><th>IP</th><th>Fabricante</th><th>IA</th><th>Destinos</th><th>Stream</th><th></th>
   </tr></thead>
   <tbody>
     {% for c in cameras %}{% include "cameras/_row.html" %}{% endfor %}
   </tbody>
-</table>
+</table></div>
 {% else %}
 <div class="vazio">Nenhuma câmera cadastrada ainda.</div>
 {% endif %}

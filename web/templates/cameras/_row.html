@@ -7,6 +7,7 @@
   <td>{% if c.go2rtc_sync == 'ok' %}<span class="badge online">sincronizado</span>{% elif c.go2rtc_sync == 'erro' %}<span class="badge offline" title="{{ c.go2rtc_sync_erro }}">erro</span>{% else %}<span class="badge neutro">pendente</span>{% endif %}</td>
   <td style="white-space:nowrap">
     <button class="btn" hx-get="/painel/cameras/{{ c.id }}/editar" hx-target="#form-area" hx-swap="innerHTML">Editar</button>
+    {% if eh_admin_logado %}<a class="btn" href="/painel/cameras/{{ c.id }}/analise">Análise</a>{% endif %}
     <button class="btn perigo" hx-delete="/painel/cameras/{{ c.id }}" hx-target="#camera-{{ c.id }}" hx-swap="outerHTML" hx-confirm="Remover a câmera {{ c.nome }}?">Remover</button>
   </td>
 </tr>

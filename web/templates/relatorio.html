@@ -1,60 +1,17 @@
 {% extends "base.html" %}
-{% block title %}Relatório — Jutta Ped{% endblock %}
+{% block title %}Alertas — Jutta Ped{% endblock %}
+{% block titulo_pagina %}Alertas{% endblock %}
 {% block content %}
-<h3 style="margin-top:0">Status das câmeras</h3>
-<table>
-  <thead><tr><th>Câmera</th><th>Stream</th><th>IA</th><th>Estado atual</th><th>Último frame</th><th>Último alerta</th></tr></thead>
-  <tbody>
-    {% for c in cameras %}
-    <tr>
-      <td>{{ c.nome }}</td>
-      <td>{% if c.stream_online %}<span class="badge online">online</span>{% else %}<span class="badge offline">sem sinal</span>{% endif %}</td>
-      <td>{{ 'ligada' if c.ia_ativa else '—' }}</td>
-      <td>{% include "partials/ia_estado.html" %}</td>
-      <td>{{ c.ultimo_frame_em.strftime('%d/%m %H:%M:%S') if c.ultimo_frame_em else '—' }}</td>
-      <td>{{ c.ultimo_alerta_em.strftime('%d/%m %H:%M:%S') if c.ultimo_alerta_em else '—' }}</td>
-    </tr>
-    {% else %}
-    <tr><td colspan="6" class="vazio">Nenhuma câmera cadastrada.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
-
-{% if eh_admin_logado %}
-<h3 style="margin-top:1.5rem">Status dos destinos</h3>
-<table>
-  <thead><tr><th>Destino</th><th>Tipo</th><th>Estado</th><th>Última entrega</th><th>Resultado</th></tr></thead>
-  <tbody>
-    {% for destino, ultima in destinos_status %}
-    <tr>
-      <td>{{ destino.nome }}</td>
-      <td>{{ {'gpsindoor':'GPS Indoor','wifiptt':'WifiPTT Central','webhook':'Webhook'}[destino.tipo.value] }}</td>
-      <td><span class="badge {{ 'online' if destino.ativo else 'neutro' }}">{{ 'Habilitado' if destino.ativo else 'Desabilitado' }}</span></td>
-      <td>{{ ultima.criado_em.strftime('%d/%m %H:%M:%S') if ultima else '—' }}</td>
-      <td>
-        {% if ultima %}
-          {% if ultima.sucesso %}<span class="badge online">ok</span>{% else %}<span class="badge offline">falha</span>{% endif %}
-          {% if ultima.detalhe %}<details style="display:inline-block; margin-left:.4rem"><summary>ver resposta</summary><pre class="console-box">{{ ultima.detalhe }}</pre></details>{% endif %}
-        {% else %}<span class="aviso">nenhum envio ainda</span>{% endif %}
-      </td>
-    </tr>
-    {% else %}
-    <tr><td colspan="5" class="vazio">Nenhum destino cadastrado.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
-{% endif %}
-
-<h3 style="margin-top:1.5rem">Alertas</h3>
-<form class="painel" style="padding:.7rem 1rem" hx-get="/painel/relatorio/alertas" hx-target="#tabela-alertas" hx-trigger="change, load">
+<p class="subtitulo">Histórico dos alertas operacionais. Eventos de sombra (diagnóstico) não aparecem aqui.</p>
+<form class="painel" id="filtros-relatorio" hx-get="/painel/relatorio/alertas" hx-target="#tabela-alertas" hx-trigger="change, load">
   <div class="linha">
-    <div><label>Câmera</label>
-      <select name="camera_id"><option value="">Todas</option>{% for c in cameras %}<option value="{{ c.id }}">{{ c.nome }}</option>{% endfor %}</select></div>
-    <div><label>Situação</label>
-      <select name="situacao"><option value="">Todas</option><option value="pendente">Sem ciência</option><option value="reconhecido">Com ciência</option><option value="suprimido">Suprimidos (cooldown)</option></select></div>
-    <div><label>De</label><input type="date" name="de"></div>
-    <div><label>Até</label><input type="date" name="ate"></div>
+    <div><label for="r-camera">Câmera</label>
+      <select id="r-camera" name="camera_id"><option value="">Todas</option>{% for c in cameras or [] %}<option value="{{ c.id }}">{{ c.nome }}</option>{% endfor %}</select></div>
+    <div><label for="r-situacao">Situação</label>
+      <select id="r-situacao" name="situacao"><option value="">Todas</option><option value="pendente">Sem ciência</option><option value="reconhecido">Com ciência</option><option value="suprimido">Suprimidos (cooldown)</option></select></div>
+    <div><label for="r-de">De</label><input id="r-de" type="date" name="de"></div>
+    <div><label for="r-ate">Até</label><input id="r-ate" type="date" name="ate"></div>
   </div>
 </form>
-<div id="tabela-alertas"></div>
+<div id="tabela-alertas" aria-live="polite"><div class="vazio">Carregando alertas…</div></div>
 {% endblock %}

@@ -1,23 +1,31 @@
-{# Card de camera do monitoramento: area de video (iframe go2rtc + canvas do overlay) e rodape
-   com nome, estado da IA e Play -- fora do video, para nao cobrir os controles do player.
-   Contexto: c (ver routes_monitor.visao_camera). #}
+{# Card de camera do monitoramento: o video tem prioridade visual; abaixo ficam o nome, os selos
+   (conexao do stream, analise, receita, sombra) e o Play -- fora do video, para nao cobrir os controles do player.
+   Video, analise (IA), receita e sombra sao coisas diferentes e aparecem separadas.
+   Contexto: c (routes_monitor.visao_camera + receita_label, sombra_ativa, sombra_estado, sombra_erro). #}
 <div class="cam-bloco">
   <div class="cam-card" id="cam-{{ c.id }}" data-camera-id="{{ c.id }}" data-player-url="{{ c.player_url or '' }}">
-    <iframe id="player-{{ c.id }}" src="about:blank" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
-    <canvas id="overlay-{{ c.id }}"></canvas>
+    <iframe id="player-{{ c.id }}" src="about:blank" title="Vídeo da câmera {{ c.nome }}" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
+    <canvas id="overlay-{{ c.id }}" aria-hidden="true"></canvas>
     {% if not c.player_url %}<div class="vazio-video">Aguardando o stream ficar disponível no go2rtc…</div>{% endif %}
   </div>
   <div class="cam-rodape">
-    <div class="cam-rodape-info">
-      <strong class="cam-nome">{{ c.nome }}</strong>
-      <span id="ia-estado-{{ c.id }}"
-            hx-get="/painel/cameras/{{ c.id }}/ia-estado" hx-trigger="load, every 3s" hx-swap="innerHTML">
-        {% include "partials/ia_estado.html" %}
-      </span>
+    <div class="cam-linha">
+      <strong class="cam-nome" title="{{ c.nome }}">{{ c.nome }}</strong>
+      <div class="cam-rodape-acoes">
+        <button class="btn primary" type="button" id="btn-play-{{ c.id }}" onclick="livePlay({{ c.id }})"{% if not c.player_url %} title="O stream ainda não foi sincronizado no go2rtc"{% endif %}>Play</button>
+      </div>
     </div>
-    <div class="cam-rodape-acoes">
-      <span class="aviso" style="margin:0">{{ c.sync_texto }}</span>
-      <button class="btn primary" type="button" id="btn-play-{{ c.id }}" onclick="livePlay({{ c.id }})">Play</button>
+    <div class="selos">
+      <span class="selo"><span class="selo-rotulo">Vídeo:</span> {% if c.go2rtc_estado == 'inacessivel' %}<span class="badge offline" title="A API do go2rtc não respondeu na última sondagem">go2rtc inacessível</span>{% elif c.player_url %}<span class="badge neutro" title="Configuração sincronizada no go2rtc. O vídeo só é confirmado ao tocar.">stream configurado</span>{% else %}<span class="badge aviso-amarelo">sem stream</span>{% endif %} <span>{{ c.sync_texto }}</span></span>
+      <span class="selo"><span class="selo-rotulo">Análise:</span>
+        <span id="ia-estado-{{ c.id }}" hx-get="/painel/cameras/{{ c.id }}/ia-estado" hx-trigger="load, every 3s" hx-swap="innerHTML">{% include "partials/ia_estado.html" %}</span></span>
+      <span class="selo"><span class="selo-rotulo">Receita:</span>
+        {% if c.receita_label %}<span class="badge info">{{ c.receita_label }}</span>{% else %}<span class="badge neutro">sem receita</span>{% endif %}</span>
+      <span class="selo"><span class="selo-rotulo">Sombra:</span>
+        {% if c.sombra_estado == 'ativa' %}<span class="badge sombra">ativa</span>
+        {% elif c.sombra_estado == 'aguardando' %}<span class="badge sombra">aguardando</span>
+        {% elif c.sombra_estado == 'erro' %}<span class="badge offline" title="{{ c.sombra_erro or '' }}">erro</span>
+        {% else %}<span class="badge neutro">desligada</span>{% endif %}</span>
     </div>
   </div>
 </div>

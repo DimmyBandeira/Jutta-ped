@@ -245,6 +245,16 @@ class Go2rtcSync:
                 client.close()
         return resumo
 
+    def sondar(self) -> tuple[bool, int]:
+        """(API respondeu, total de streams no go2rtc). Somente leitura; nunca levanta."""
+        client = self._client_factory()
+        try:
+            return True, len(client.listar())
+        except Go2rtcIndisponivel:
+            return False, 0
+        finally:
+            client.close()
+
     def nomes_vivos(self) -> list[str]:
         """Streams existentes no go2rtc que o painel NAO gerencia (candidatos a camera de teste)."""
         client = self._client_factory()

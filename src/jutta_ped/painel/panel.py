@@ -19,12 +19,16 @@ import httpx
 from src.jutta_ped.painel import (
     routes_alertas,
     routes_auth,
+    routes_camera_analise,
     routes_cameras,
     routes_config,
+    routes_dashboard,
     routes_especialistas,
     routes_monitor,
+    routes_receitas,
     routes_usuarios,
 )
+from src.jutta_ped.especialistas.executor import Executor
 from src.jutta_ped.especialistas.instalador import Instalador
 from src.jutta_ped.painel.config_service import ler_config
 from src.jutta_ped.painel.crypto import Cifra
@@ -32,6 +36,7 @@ from src.jutta_ped.painel.db import Database
 from src.jutta_ped.painel.limite_corpo import LimiteCorpoUpload
 from src.jutta_ped.painel.eventos import PainelEventos
 from src.jutta_ped.painel.go2rtc import Go2rtcClient, Go2rtcProcesso, Go2rtcSync
+from src.jutta_ped.painel.sombra_service import GerenteSombra
 from src.jutta_ped.painel.servicos import GerenteIa, IaOrquestrador, PainelServicos, config_loader_para
 from src.jutta_ped.painel.deps import NaoAutenticado, SemPermissao, WEB_DIR, exige_admin, render, usuario_atual
 from src.jutta_ped.painel.models import Papel, Usuario
@@ -75,7 +80,6 @@ def _secao_em_construcao(caminho: str, titulo: str, chave: str, *, admin: bool =
         return render(request, "em_construcao.html", usuario, titulo=titulo, ativo=chave)
 
 
-_secao_em_construcao("/relatorio", "Relatório", "relatorio")
 _secao_em_construcao("/destinos", "Destinos", "destinos", admin=True)
 
 
@@ -88,6 +92,8 @@ def montar_servicos(
     go2rtc_transport: httpx.BaseTransport | None,
     popen: Callable[..., Any] | None,
     evidence_roots: list[Path] | None,
+    instalador: Instalador | None = None,
+    especialistas_backends: dict[str, Any] | None = None,
 ) -> PainelServicos:
     cifra = Cifra.carregar_ou_criar(runtime_dir / "painel_cifra.key")
     config_loader = config_loader_para(database)
@@ -104,10 +110,17 @@ def montar_servicos(
         **processo_kwargs,
     )
     sync = Go2rtcSync(database, cifra, go2rtc_dir / "streams.yaml", client_factory=client_factory)
+    instalador = instalador or Instalador(runtime_dir / "especialistas")
+    # Executor COMPARTILHADO pela sombra de todas as cameras (carrega modelos sob demanda, fora das requisicoes).
+    executor = Executor(instalador, backends=especialistas_backends)
     ia = None
+    sombra = GerenteSombra(database, instalador, executor, runtime_dir)
     if manager is not None and config_factory is not None:
-        ia = IaOrquestrador(database=database, gerente=manager, config_loader=config_loader, config_factory=config_factory)
-    servicos = PainelServicos(database=database, sync=sync, go2rtc=processo, ia=ia, runtime_dir=runtime_dir)
+        ia = IaOrquestrador(database=database, gerente=manager, config_loader=config_loader, config_factory=config_factory,
+                            sombra_provider=sombra.porta)
+        sombra.definir_ia_rodando(lambda camera_id: ia.estado(camera_id).get("estado") == "rodando")
+    servicos = PainelServicos(database=database, sync=sync, go2rtc=processo, ia=ia, runtime_dir=runtime_dir, sombra=sombra)
+    servicos.executor = executor
     servicos.cifra = cifra
     servicos.eventos = PainelEventos(database, evidence_roots or [ROOT / "pediatria_results"])
     registrar = getattr(manager, "add_event_listener", None)
@@ -127,6 +140,7 @@ def mount_panel(
     go2rtc_transport: httpx.BaseTransport | None = None,
     popen: Callable[..., Any] | None = None,
     evidence_roots: list[Path] | None = None,
+    especialistas_backends: dict[str, Any] | None = None,
 ) -> Database:
     """Acopla o painel web (login, sessao, RBAC, cameras, go2rtc) a um app FastAPI existente.
 
@@ -134,6 +148,7 @@ def mount_panel(
     SessionStartConfig); sem eles o painel funciona mas nao liga a IA.
     `background=False` nao inicia as threads de go2rtc/IA (testes).
     `evidence_roots`: pastas de onde o painel pode servir imagens de evidencia (padrao: pediatria_results/).
+    `especialistas_backends`: backends do executor compartilhado da sombra (testes; padrao: Ultralytics sob demanda).
     """
     runtime_dir = runtime_dir or DEFAULT_RUNTIME_DIR
     db_url = db_url or os.environ.get("JUTTA_PANEL_DB") or f"sqlite:///{(runtime_dir / 'painel.db').as_posix()}"
@@ -141,10 +156,12 @@ def mount_panel(
     database.create_all()
     garantir_admin_inicial(database)
 
-    servicos = montar_servicos(database, runtime_dir, manager=manager, config_factory=config_factory, go2rtc_transport=go2rtc_transport, popen=popen, evidence_roots=evidence_roots)
+    instalador = Instalador(runtime_dir / "especialistas")
+    servicos = montar_servicos(database, runtime_dir, manager=manager, config_factory=config_factory, go2rtc_transport=go2rtc_transport, popen=popen,
+                               evidence_roots=evidence_roots, instalador=instalador, especialistas_backends=especialistas_backends)
     app.state.painel = servicos
     app.state.painel_db = database
-    app.state.especialistas = Instalador(runtime_dir / "especialistas")
+    app.state.especialistas = instalador
     app.add_middleware(LimiteCorpoUpload, caminho=routes_especialistas.CAMINHO_UPLOAD, chave_estado="especialistas_upload_max",
                        padrao=routes_especialistas.UPLOAD_MAX_PADRAO)
     app.state.painel_limitador = LimitadorLogin()
@@ -189,9 +206,12 @@ def mount_panel(
     app.include_router(routes_auth.router)
     app.include_router(routes_usuarios.router)
     app.include_router(routes_cameras.router)
+    app.include_router(routes_camera_analise.router)
     app.include_router(routes_config.router)
     app.include_router(routes_especialistas.router)
     app.include_router(routes_monitor.router)
     app.include_router(routes_alertas.router)
+    app.include_router(routes_receitas.router)
+    app.include_router(routes_dashboard.router)
     app.include_router(_placeholders)
     return database

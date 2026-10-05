@@ -1,0 +1,14 @@
+<section class="card">
+  <h3>SimulaterDSA</h3>
+  <p>Importe as câmeras habilitadas de um cenário. Serão cadastradas como fontes RTSP e sincronizadas com o go2rtc do sistema, com IA desligada. Câmeras iguais já cadastradas serão preservadas.</p>
+  <form hx-post="/painel/cameras/simulater-dsa" hx-target="#form-area" hx-swap="innerHTML" hx-encoding="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="sim-host">IP ou host do simulador (visto pelo servidor do sistema)</label>
+    <input id="sim-host" name="host" value="127.0.0.1" required>
+    <label for="sim-yaml">YAML do cenário SimulaterDSA</label>
+    <input id="sim-yaml" type="file" name="arquivo_yaml" accept=".yaml,.yml" required>
+    <p>O cenário deve estar iniciado no simulador. A porta vem do YAML; o go2rtc da mãe deve usar outra porta RTSP se rodar na mesma máquina. Os arquivos de vídeo não são copiados.</p>
+    <button class="btn primary" type="submit">Cadastrar câmeras do cenário</button>
+    <button class="btn" type="button" hx-get="/painel/cameras/cancelar" hx-target="#form-area">Cancelar</button>
+  </form>
+</section>

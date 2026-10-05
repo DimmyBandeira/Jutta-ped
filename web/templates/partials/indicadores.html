@@ -1,0 +1,30 @@
+{# Faixa de indicadores. Contexto: ind (cameras_total, streams_sincronizados, go2rtc, go2rtc_verificado_ha_s, analise_em_execucao, alertas_pendentes, ia_disponivel).
+   Nenhum valor e inventado: sem gerente de IA a analise aparece como "indisponivel", nunca como 0. #}
+<div class="indicadores" role="group" aria-label="Indicadores do sistema">
+  <div class="indicador">
+    <p class="rotulo-ind">Câmeras cadastradas</p>
+    <div class="valor">{{ ind.cameras_total if ind and ind.cameras_total is not none else '—' }}</div>
+  </div>
+  <div class="indicador">
+    <p class="rotulo-ind">Streams sincronizados</p>
+    <div class="valor">{{ ind.streams_sincronizados if ind and ind.streams_sincronizados is not none else '—' }}</div>
+    {% if ind and ind.go2rtc == 'inacessivel' %}<p class="nota"><span class="badge offline">go2rtc inacessível</span> Configuração cadastrada; vídeo não confirmado.</p>
+    {% elif ind and ind.go2rtc == 'ok' %}<p class="nota">Configuração sincronizada; API do go2rtc respondeu há {{ ind.go2rtc_verificado_ha_s }} s. Não comprova vídeo chegando nem análise.</p>
+    {% elif ind and ind.go2rtc == 'desatualizado' %}<p class="nota"><span class="badge aviso-amarelo">sondagem antiga</span> Estado do go2rtc não confirmado agora.</p>
+    {% else %}<p class="nota">Estado do go2rtc ainda não verificado. Configuração cadastrada; não comprova vídeo.</p>{% endif %}
+  </div>
+  <div class="indicador">
+    <p class="rotulo-ind">Análise em execução</p>
+    {% if ind and ind.ia_disponivel %}
+    <div class="valor">{{ ind.analise_em_execucao if ind.analise_em_execucao is not none else '—' }}</div>
+    {% else %}
+    <div class="valor indisp">indisponível</div>
+    <p class="nota">O serviço de análise não está ativo.</p>
+    {% endif %}
+  </div>
+  <div class="indicador{% if ind and ind.alertas_pendentes %} destaque{% endif %}">
+    <p class="rotulo-ind">Alertas pendentes</p>
+    <div class="valor">{{ ind.alertas_pendentes if ind and ind.alertas_pendentes is not none else '—' }}</div>
+    <p class="nota">Sem ciência do operador.</p>
+  </div>
+</div>

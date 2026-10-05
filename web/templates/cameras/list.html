@@ -1,8 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Câmeras — Jutta Ped{% endblock %}
+{% block titulo_pagina %}Câmeras{% endblock %}
 {% block content %}
 <div class="barra-acoes">
   <button class="btn primary" hx-get="/painel/cameras/novo" hx-target="#form-area" hx-swap="innerHTML">+ Nova câmera</button>
+  {% if eh_admin_logado %}<button class="btn" hx-get="/painel/cameras/simulater-dsa" hx-target="#form-area" hx-swap="innerHTML">SimulaterDSA — importar cenário</button>{% endif %}
 </div>
 <div id="form-area"></div>
 {% include "cameras/_lista.html" %}

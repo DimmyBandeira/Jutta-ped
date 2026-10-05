@@ -86,6 +86,13 @@ def evidencia(event_id: str, tipo: str, request: Request, operador: Usuario = De
     return FileResponse(arquivo, media_type=tipo_midia, headers={"Cache-Control": _EVIDENCIA_CACHE})
 
 
+def _id_ou_none(valor: str | None) -> int | None:
+    return int(valor) if valor is not None and valor.strip().isdigit() else None
+
+
 @router.get("/eventos/recentes")
-def eventos_recentes(request: Request, operador: Usuario = Depends(usuario_atual)):
-    return render(request, "partials/eventos_recentes.html", operador, alertas=_eventos(request).recentes())
+def eventos_recentes(request: Request, camera: str | None = None, pendentes: str | None = None, operador: Usuario = Depends(usuario_atual)):
+    camera_id = _id_ou_none(camera)
+    so_pendentes = (pendentes or "").strip().lower() in {"1", "true", "on", "sim"}
+    alertas = _eventos(request).recentes(camera_id=camera_id, so_pendentes=so_pendentes)
+    return render(request, "partials/eventos_recentes.html", operador, alertas=alertas, filtro_camera=camera_id, so_pendentes=so_pendentes)

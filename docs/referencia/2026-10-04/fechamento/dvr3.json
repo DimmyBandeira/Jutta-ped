@@ -1,0 +1,47 @@
+{
+  "video": "DVR-3-Ch.0-1 ACESSO-BLINDEX.avi",
+  "sha256": "7f4d41f23f752913e93eaad2ac9bf9c90c60b1864e7f020f0ef96c1818bfdc62",
+  "origem_revisao": "ia",
+  "status": "proposta_nao_confirmada",
+  "revisado": false,
+  "revisor": "Codex (IA)",
+  "data": "2026-10-04",
+  "revisao_completa_do_video": false,
+  "metodo": {
+    "tipo": "folhas_de_contato",
+    "passo_quadros": 15,
+    "limite": "Amostragem visual distribuida pela duracao; nao equivale a revisao humana integral. Ver revisao_codex.md."
+  },
+  "episodios": [
+    {
+      "id": "dvr3-e1",
+      "sujeito_local": "primeira-passagem",
+      "inicio_s": 2.4,
+      "fim_s": 10.8,
+      "estado_esperado": "CHILD_ALONE",
+      "observacao": "Primeira passagem pela direita ate a borda inferior; confirmar ausencia de companhia proxima.",
+      "criterio_inicio": "Primeira aparicao identificavel da primeira crianca junto as cadeiras a direita, sem adulto proximo acompanhando nas imagens revisadas. Marco amostrado: 2,4 s."
+    },
+    {
+      "id": "dvr3-e2",
+      "sujeito_local": "segunda-passagem",
+      "inicio_s": 10.4,
+      "fim_s": 14.0,
+      "estado_esperado": "CHILD_ALONE",
+      "observacao": "Roupa clara; passagem distinta, parcialmente simultanea ao fim da primeira. Candidato sem alerta.",
+      "criterio_inicio": "Primeira aparicao identificavel da segunda crianca junto as cadeiras a direita, sem adulto proximo acompanhando nas imagens revisadas. Marco amostrado: 10,4 s; sujeito distinto da primeira passagem."
+    }
+  ],
+  "esquema": 2,
+  "revisao_cega": false,
+  "procedencia": {
+    "confirmada": false,
+    "fonte": "",
+    "tipo": "",
+    "confirmado_por": ""
+  },
+  "derivada_de_proposta": {
+    "arquivo": "docs/referencia/2026-10-04/propostas_ia/dvr3.json",
+    "sha256": "5b59a41ae145d04d7884a59045c493f8baa1e91e8d7415d7529253f321c36ea2"
+  }
+}

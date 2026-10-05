@@ -3,7 +3,7 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint, event
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.jutta_ped.painel.db import Base
@@ -105,6 +105,11 @@ class Camera(Base):
     termica_canal: Mapped[int | None] = mapped_column(Integer, nullable=True)
     termica_rtsp_url_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
     termica_stream_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    # Receita de sombra associada (versao IMUTAVEL) e se a sombra esta ligada. Nasce desligada.
+    receita_versao_id: Mapped[int | None] = mapped_column(ForeignKey("receita_versoes.id", ondelete="SET NULL"), nullable=True)
+    sombra_ativa: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # Diagnostico do mestre (so em memoria, independente da sombra e de receita): liga/desliga a quente.
+    diagnostico_ativo: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     destinos: Mapped[list[CameraDestino]] = relationship(cascade="all, delete-orphan", lazy="selectin")
 
@@ -158,3 +163,57 @@ class Entrega(Base):
     sucesso: Mapped[bool] = mapped_column(Boolean, default=False)
     detalhe: Mapped[str | None] = mapped_column(String(500), nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class Receita(Base):
+    """Receita (regra declarativa sobre atributos de especialistas). O conteudo vive nas versoes, que sao imutaveis."""
+
+    __tablename__ = "receitas"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nome: Mapped[str] = mapped_column(String(48), unique=True, index=True)       # slug
+    descricao: Mapped[str] = mapped_column(String(300), default="")
+    criada_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class ReceitaVersao(Base):
+    """Versao sequencial (1, 2, ...) de uma receita. NUNCA e alterada: editar = criar nova versao."""
+
+    __tablename__ = "receita_versoes"
+    __table_args__ = (UniqueConstraint("receita_id", "versao", name="uq_receita_versao"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    receita_id: Mapped[int] = mapped_column(ForeignKey("receitas.id", ondelete="CASCADE"), index=True)
+    versao: Mapped[int] = mapped_column(Integer)
+    definicao_json: Mapped[str] = mapped_column(Text)               # dict no formato de motor/receita.py (id=nome, versao=str(versao))
+    config_hash: Mapped[str] = mapped_column(String(80))
+    criado_por: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+@event.listens_for(ReceitaVersao, "before_update")
+def _versao_e_imutavel(_mapper, _connection, _alvo) -> None:  # noqa: ANN001
+    raise ValueError("Versao de receita e imutavel: crie uma nova versao.")
+
+
+class CameraConfigVersao(Base):
+    """Versao sequencial (1, 2, ...) da configuracao de analise de UMA camera. NUNCA e alterada: mudar = criar nova versao.
+    Vigente = maior `versao`. `cameras.receita_versao_id` segue sendo a associacao viva, mantida em sincronia na mesma transacao."""
+
+    __tablename__ = "camera_config_versoes"
+    __table_args__ = (UniqueConstraint("camera_id", "versao", name="uq_camera_config_versao"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    camera_id: Mapped[int] = mapped_column(ForeignKey("cameras.id", ondelete="CASCADE"), index=True)
+    versao: Mapped[int] = mapped_column(Integer)
+    especialista_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    receita_versao_id: Mapped[int | None] = mapped_column(ForeignKey("receita_versoes.id", ondelete="SET NULL"), nullable=True)
+    ajustes_json: Mapped[str] = mapped_column(Text, default="{}")
+    config_hash: Mapped[str] = mapped_column(String(80))
+    criado_por: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+@event.listens_for(CameraConfigVersao, "before_update")
+def _config_versao_e_imutavel(_mapper, _connection, _alvo) -> None:  # noqa: ANN001
+    raise ValueError("Versao de configuracao de camera e imutavel: crie uma nova versao.")

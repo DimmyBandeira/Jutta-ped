@@ -139,6 +139,8 @@ class LatestFrameCapture:
         self._read_timeout = read_timeout
         self._cond = threading.Condition()
         self._frame: Any = None
+        self._frame_recebido_em: float = 0.0     # monotonic local da RECEPCAO do frame guardado (nao e horario da camera)
+        self.ultimo_recebido_em: float | None = None   # recepcao do frame que o ultimo `read()` entregou
         self._seq = 0
         self._entregue = 0
         self._falhou = False
@@ -154,6 +156,7 @@ class LatestFrameCapture:
         try:
             while not self._parar:
                 ok, frame = self._cap.read()
+                recebido = time.monotonic()
                 with self._cond:
                     if not ok or frame is None:
                         self._falhou = True
@@ -161,7 +164,7 @@ class LatestFrameCapture:
                         return
                     if self._seq > self._entregue:
                         self.dropped += 1            # o anterior nunca foi consumido: foi sobrescrito
-                    self._frame, self._seq = frame, self._seq + 1
+                    self._frame, self._seq, self._frame_recebido_em = frame, self._seq + 1, recebido
                     self.lidos += 1
                     self._cond.notify_all()
         finally:
@@ -179,6 +182,7 @@ class LatestFrameCapture:
             self._cond.wait_for(lambda: self._seq > self._entregue or self._falhou or self._parar, timeout=self._read_timeout)
             if self._seq > self._entregue:
                 self._entregue = self._seq
+                self.ultimo_recebido_em = self._frame_recebido_em
                 return True, self._frame
             return False, None
 
@@ -375,6 +379,9 @@ class SessionStartConfig:
     # Os tempos do analisador de companhia (segundos) sao convertidos por esta taxa. 0 = sem limite.
     # Fontes 'file' (analise offline, testes) nunca sao limitadas.
     analysis_fps: float = 5.0
+    # Motor em SOMBRA (src/jutta_ped/motor): objeto opcional com `.processar(...)`. None = desligado (padrao). Observa os mesmos
+    # quadros/deteccoes e grava rastros proprios; nunca decide nem emite os alertas operacionais desta sessao.
+    motor_sombra: Any = None
 
 
 @dataclass
@@ -422,6 +429,8 @@ class PediatriaHeadlessSession:
     # Defaults de classe: sessoes montadas sem __init__ (testes) seguem sem limite de fps e sem placement.
     _analysis_fps: float = 0.0
     placement: Placement | None = None
+    _geracao_sombra: int = 0
+    _capturado_em: float | None = None
 
     def __init__(self, config: SessionStartConfig) -> None:
         self.config = config
@@ -498,6 +507,10 @@ class PediatriaHeadlessSession:
         self.capture = open_capture_source(self.config.source)
         if not self.capture.isOpened():
             raise OSError("Nao foi possivel abrir a fonte selecionada.")
+        if getattr(self.config, "motor_sombra", None) is not None:
+            from src.jutta_ped.motor.adaptador import proxima_geracao
+
+            self._geracao_sombra = proxima_geracao()
         self.state.status = "running"
         self._append_session_log({"event_type": "analysis_started", "source": self.camera_id, "requested_device": self.config.requested_device, "resolved_device": self.device, "backend": self.placement.backend if self.placement else None, "device_reason": self.device_reason, "force_cpu": self.config.force_cpu, "modo_coleta": self.config.modo_coleta})
         self.thread = threading.Thread(target=self._run_loop, name=f"pediatria-{self.session_id}", daemon=True)
@@ -525,10 +538,13 @@ class PediatriaHeadlessSession:
             while not self.stop_event.is_set():
                 loop_started = time.perf_counter()
                 ok, frame = self.capture.read()
+                # fontes ao vivo: o quadro nasce na RECEPCAO local (thread leitora), nao quando a IA o consome
+                self._capturado_em = getattr(self.capture, "ultimo_recebido_em", None) or time.monotonic()
                 if not ok or frame is None:
                     frame = self._handle_read_failure()
                     if frame is None:
                         break
+                    self._capturado_em = time.monotonic()
                 self._process_frame(frame)
                 self.telemetry.capture_loop_ms.add((time.perf_counter() - loop_started) * 1000.0)
                 self.telemetry.sample_resources()
@@ -630,6 +646,8 @@ class PediatriaHeadlessSession:
             self.state.frames_processed += 1
             frame_id = self.state.frames_processed
         clean_frame = frame.copy()
+        # Sombra por Cena: UMA passagem do mestre (reservada para este quadro) e a Cena entregue ANTES do pipeline pediatrico.
+        cena_tratada = self._entregar_cena(clean_frame, frame_id)
         result = self.service.process_frame(clean_frame, frame_id=frame_id)
         self.latencies.append(result.latency_ms)
         self.telemetry.process_frame_ms.add(result.latency_ms)
@@ -637,6 +655,8 @@ class PediatriaHeadlessSession:
         resolved = result.resolved_detections
         person_detections = result.person_detections
         self.stable_state_counts[state.stable_state] += 1
+        if not cena_tratada:
+            self._alimentar_sombra(clean_frame, frame_id, person_detections)
         status_final = status_final_for(state, resolved, person_detections)
         overlay_objects = build_overlay_objects(resolved, state)
         captured_at = datetime.now().isoformat(timespec="milliseconds")
@@ -673,6 +693,58 @@ class PediatriaHeadlessSession:
                         self.state.popup_count += 1
                     else:
                         self.state.suppressed_count += 1
+
+    def _entregar_cena(self, frame: Any, frame_id: int) -> bool:
+        """Caminho da Cena (mestre compartilhado). True se tratou a sombra deste quadro (entregue, recusada ou com erro contado);
+        False se este caminho nao se aplica (sem motor, motor sem `processar_cena` ou servico sem mestre) e vale o caminho antigo.
+
+        Nunca propaga erro: falha da sombra e contada em `evidence_error_counts['motor_sombra']` e a analise real segue igual.
+        """
+        motor = getattr(self.config, "motor_sombra", None)
+        if motor is None or not callable(getattr(motor, "processar_cena", None)) or not callable(getattr(self.service, "observar_mestre", None)):
+            return False
+        if self._source_kind in {"network", "device"} and not getattr(motor, "seguro_para_ao_vivo", False):
+            with self.lock:
+                self.evidence_error_counts["motor_sombra_sincrono_recusado_ao_vivo"] += 1
+            return True
+        if not getattr(motor, "ativa", True):
+            return True                                        # porta sem consumidor (alvo/diagnostico): nao roda o mestre nem monta a Cena
+        try:
+            from src.jutta_ped.motor.cena import criar_cena, deteccoes_de_objetos
+
+            pessoas = self.service.observar_mestre(frame, frame_id)
+            if pessoas is None:
+                return False                                   # sem mestre (pipeline de crop desligado): caminho antigo
+            shape = getattr(frame, "shape", None)
+            altura, largura = int(shape[0]), int(shape[1])
+            recebido = self._capturado_em if self._capturado_em is not None else time.monotonic()
+            cena = criar_cena(self.camera_id, self._geracao_sombra, frame_id, recebido, largura, altura,
+                              deteccoes_de_objetos(pessoas, "person"), quadro=frame)
+            motor.processar_cena(cena)
+        except Exception:  # noqa: BLE001 -- a sombra e observacional: falhar (inclusive CenaInvalida) nao afeta a analise real
+            with self.lock:
+                self.evidence_error_counts["motor_sombra"] += 1
+        return True
+
+    def _alimentar_sombra(self, frame: Any, frame_id: int, person_detections: list[PediatricDetection]) -> None:
+        """Entrega o quadro e as deteccoes ao motor em sombra. Nunca propaga erro nem altera o fluxo operacional."""
+        motor = getattr(self.config, "motor_sombra", None)
+        if motor is None:
+            return
+        if self._source_kind in {"network", "device"} and not getattr(motor, "seguro_para_ao_vivo", False):
+            # motor sincrono atrasaria a publicacao operacional: so em arquivo/ensaio isolado (ver docs/etapas_motor/03_motor_minimo.md)
+            with self.lock:
+                self.evidence_error_counts["motor_sombra_sincrono_recusado_ao_vivo"] += 1
+            return
+        try:
+            from src.jutta_ped.motor.adaptador import observacoes_de_deteccoes
+
+            capturado = self._capturado_em if self._capturado_em is not None else time.monotonic()
+            motor.processar(self.camera_id, self._geracao_sombra, frame, observacoes_de_deteccoes(self.camera_id, self._geracao_sombra, frame_id, capturado, person_detections))
+        except Exception as exc:  # noqa: BLE001 -- a sombra e observacional: falhar nao pode afetar a analise real
+            with self.lock:
+                self.evidence_error_counts["motor_sombra"] += 1
+                self.state.last_error = self.state.last_error or f"motor_sombra: {type(exc).__name__}"
 
     def _suprimido_deve_registrar(self, stable_state: str, track_id: int) -> bool:
         """Limita evidencia/evento de frames suprimidos a 1 por intervalo (ver SessionStartConfig)."""
@@ -902,8 +974,21 @@ class PediatriaHeadlessSession:
                 return
             self.state.status = status
             self.state.stopped_at = datetime.now().isoformat(timespec="milliseconds")
+        self._encerrar_sombra()
         self._append_session_log({"event_type": "analysis_stopped", "source": self.camera_id, "frames_processed": self.state.frames_processed, "popup_count": self.state.popup_count, "stable_state_counts": dict(self.stable_state_counts)})
         self._write_summary_files()
+
+    def _encerrar_sombra(self) -> None:
+        """Avisa a sombra (nao bloqueante) que esta sessao terminou, para o estado das regras temporais ser descartado."""
+        motor = getattr(self.config, "motor_sombra", None)
+        fn = getattr(motor, "encerrar_sessao", None)
+        if fn is None:
+            return
+        try:
+            fn(self._geracao_sombra)
+        except Exception:  # noqa: BLE001 -- a sombra nunca afeta o encerramento real
+            with self.lock:
+                self.evidence_error_counts["motor_sombra"] += 1
 
     def _write_summary_files(self) -> None:
         summary = self._build_summary()

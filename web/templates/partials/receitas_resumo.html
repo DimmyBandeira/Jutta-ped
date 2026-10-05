@@ -1,0 +1,22 @@
+{# Resumo de receitas no dashboard. Contexto: receitas = [{id, nome, versao, descricao, especialistas:[{id, versao_ativa}], cameras:[nome], valida, motivos:[str]}] #}
+{% if receitas %}
+{% for r in receitas %}
+<div class="item-receita">
+  <div class="form-linha" style="justify-content:space-between">
+    <strong>{{ r.nome }}</strong>
+    <span>
+      <span class="badge neutro">v{{ r.versao }}</span>
+      {% if r.valida %}<span class="badge online">válida</span>{% else %}<span class="badge offline">inválida</span>{% endif %}
+    </span>
+  </div>
+  {% if r.descricao %}<div class="aviso">{{ r.descricao }}</div>{% endif %}
+  <div class="aviso">Especialistas:
+    {% for e in r.especialistas %}{{ e.id }} <span class="hash">{{ e.versao_ativa or 'sem versão ativa' }}</span>{% if not loop.last %}, {% endif %}{% else %}nenhum{% endfor %}</div>
+  <div class="aviso">Câmeras: {% for n in r.cameras %}{{ n }}{% if not loop.last %}, {% endif %}{% else %}nenhuma associada{% endfor %}</div>
+  {% if not r.valida and r.motivos %}<ul class="aviso" style="margin:.2rem 0 0 1.1rem; padding:0">{% for m in r.motivos %}<li>{{ m }}</li>{% endfor %}</ul>{% endif %}
+</div>
+{% endfor %}
+{% else %}
+<div class="vazio">Nenhuma receita cadastrada.{% if eh_admin_logado %} <a href="/painel/receitas">Criar receita</a>{% endif %}</div>
+{% endif %}
+{% if eh_admin_logado and receitas %}<p class="aviso"><a href="/painel/receitas">Gerenciar receitas</a></p>{% endif %}

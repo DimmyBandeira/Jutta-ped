@@ -5,6 +5,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -82,6 +83,9 @@ class IaOrquestrador:
     config_loader: Callable[[], dict[str, Any]]
     config_factory: Callable[..., Any]
     intervalo_partida: float = 3.0
+    # Entrega a PORTA de sombra da camera (sempre o mesmo objeto) no INICIO da sessao: ligar/desligar a sombra depois
+    # troca o alvo da porta e nao reinicia a analise.
+    sombra_provider: Callable[[int], Any] | None = None
     relogio: Callable[[], float] = time.monotonic
     dormir: Callable[[float], None] = time.sleep
     _estado: dict[int, dict[str, str | None]] = field(default_factory=dict)
@@ -187,12 +191,16 @@ class IaOrquestrador:
         self._definir(camera_id, "iniciando")
         origem = f"{str(cfg['go2rtc_rtsp_url']).rstrip('/')}/{stream}"
         try:
+            extras: dict[str, Any] = {}
+            if self.sombra_provider is not None:
+                extras["motor_sombra"] = self.sombra_provider(camera_id)
             self.gerente.enable_camera(
                 self.config_factory(
                     source=origem,
                     camera_id=f"{PREFIXO_STREAM}{camera_id}",
                     stream_id=stream,
                     cooldown_seconds=float(cfg["cooldown_seconds"]),
+                    **extras,
                 )
             )
         except Exception as exc:  # noqa: BLE001 -- isolado por camera
@@ -216,28 +224,58 @@ class PainelServicos:
     runtime_dir: Path
     intervalo_go2rtc: float = 15.0
     intervalo_ia: float = 10.0
+    intervalo_sombra: float = 10.0
     cifra: Any = None
     eventos: Any = None
+    sombra: Any = None                  # GerenteSombra
+    executor: Any = None                # Executor compartilhado (sombra)
+    iniciado_em: datetime = field(default_factory=datetime.now)
     _lacos: list[LacoPeriodico] = field(default_factory=list)
+    # Ultima sondagem da API do go2rtc, feita no laco de fundo (nunca na renderizacao): {"api_ok", "streams", "em" (monotonic)}.
+    _go2rtc_saude: dict[str, Any] | None = None
+    relogio: Callable[[], float] = time.monotonic
 
     def _ciclo_go2rtc(self) -> None:
         self.go2rtc.garantir()
         self.sync.reconcile()
+        try:
+            api_ok, streams = self.sync.sondar()
+        except Exception:  # noqa: BLE001 -- sondagem nunca derruba o laco
+            api_ok, streams = False, 0
+        self._go2rtc_saude = {"api_ok": bool(api_ok), "streams": int(streams), "em": self.relogio()}
+
+    def go2rtc_estado(self) -> tuple[str, float | None]:
+        """(estado, idade da sondagem em s): `ok` | `inacessivel` | `desatualizado` | `desconhecido`. Le o cache; nao sonda.
+        `ok` so diz que a API do go2rtc respondeu: nao comprova produtor conectado nem quadros chegando."""
+        saude = self._go2rtc_saude
+        if saude is None:
+            return "desconhecido", None
+        idade = max(0.0, self.relogio() - saude["em"])
+        if idade > 3 * max(self.intervalo_go2rtc, 1.0):
+            return "desatualizado", idade
+        return ("ok" if saude["api_ok"] else "inacessivel"), idade
 
     def iniciar(self) -> None:
         self._lacos = [LacoPeriodico("painel-go2rtc", self._ciclo_go2rtc, self.intervalo_go2rtc)]
         if self.ia is not None:
             self._lacos.append(LacoPeriodico("painel-ia", self.ia.reconcile, self.intervalo_ia))
+        if self.sombra is not None:
+            self._lacos.append(LacoPeriodico("painel-sombra", self.sombra.reconcile, self.intervalo_sombra))
         for laco in self._lacos:
             laco.iniciar()
 
     def acordar(self) -> None:
+        """Chamado DEPOIS de qualquer mutacao commitada: invalida snapshots antigos da sombra e acorda os lacos."""
+        if self.sombra is not None:
+            self.sombra.invalidar()
         for laco in self._lacos:
             laco.acordar()
 
     def parar(self) -> None:
         for laco in self._lacos:          # primeiro os lacos: o orquestrador nao pode religar a IA
             laco.parar()
+        if self.sombra is not None:       # nenhum despacho de sombra sobrevive ao servico
+            self.sombra.parar_tudo()
         if self.ia is not None:
             self.ia.parar_todas()
         self.go2rtc.parar()

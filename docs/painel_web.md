@@ -64,6 +64,9 @@ ou o campo `csrf_token` em formulários comuns).
 | `GET /painel/relatorio`, `GET /painel/relatorio/alertas` | comum+ | Relatório e tabela filtrável de alertas. |
 | `/painel/cameras[...]` (listar, novo, editar, salvar, remover, campos-fonte, streams-do-yaml) | comum+ | CRUD de câmeras. |
 | `/painel/destinos[...]` (CRUD, `POST .../{id}/teste`) | admin | Destinos e dispatcher. |
+| `GET /painel/indicadores`, `GET /painel/alertas/historico`, `GET /painel/receitas-resumo`, `GET /painel/sombra/feed` | comum+ | Fragmentos/JSON do dashboard (seção 21). |
+| `/painel/receitas[...]`, `POST /painel/cameras/{id}/receita`, `POST /painel/cameras/{id}/sombra` | admin | Receitas, associação à câmera e sombra (seção 21). |
+| `GET /painel/processamento` | admin | Saúde e execução local (seção 21). |
 | `/painel/configuracoes` | admin | Configurações do sistema. |
 | `/painel/usuarios[...]` | admin | CRUD de usuários. |
 
@@ -480,4 +483,26 @@ tela. Toda ação grava auditoria (`especialista_instalado`, `_instalacao_recusa
 concorrente devolve 409.
 
 **O que a tela NÃO faz:** ativar uma versão apenas a registra como vigente. Já existe um executor local mínimo (manual do especialista,
-seção 14) que usa o especialista ativo, mas ele **não** está ligado ao motor de análise nem a alertas. A validação é estática (não carrega nem aprova o modelo). Receitas e vínculo com câmeras não existem ainda.
+seção 14) que usa o especialista ativo, mas ele **não** está ligado ao motor de análise nem a alertas. A validação é estática (não carrega nem aprova o modelo). Receitas e vínculo com câmeras existem a partir do lote 05e (seção 21), mas **somente em sombra**.
+
+## 21. Dashboard do sistema-mãe, receitas e sombra (lote 05e)
+
+Registro e contrato completos: [`etapas_motor/05e_dashboard_sistema_mae.md`](etapas_motor/05e_dashboard_sistema_mae.md).
+
+**Layout.** Navegação lateral escura (Monitoramento, Câmeras, Alertas; grupo *Administração* para admin: Especialistas, Receitas, Processamento, Configurações, Usuários), conteúdo claro. Em tela estreita a lateral vira barra superior com menu acessível. *Destinos* fica fora do menu até a página existir.
+
+**Monitoramento.** Indicadores reais (cadastradas; streams sincronizados no go2rtc — configuração sincronizada, **não** prova vídeo chegando nem IA ativa; o estado da API do go2rtc vem de sondagem em cache; análise em execução; alertas pendentes de ciência), gráfico de **alertas por período e câmera** (zero real e estado vazio), grade de câmeras com selos separados de vídeo, análise, receita e sombra, coluna de alertas (filtro por câmera e "só pendentes", botão Ciente; uma única conexão SSE, a de `base.html`), resumo de receitas e a área **Sombra (diagnóstico — não são alertas)**.
+
+**Receitas (admin).** Formulário simples (especialistas usados, até 4 condições, combinação todas/alguma) validado contra os contratos dos especialistas **ativos** sem carregar modelos (`contrato_leve`). Salvar cria sempre uma **versão imutável** (`receitas`, `receita_versoes`, migração 0003) com `config_hash`. Associação câmera→versão (`cameras.receita_versao_id`) revalidada a cada leitura: se o especialista mudou e a receita deixou de valer, a tela mostra os motivos. Erro nunca grava e preserva a configuração anterior. Subconjunto efetivo da linguagem: **uma trilha por vez**; sem relação entre trilhas nem persistência temporal.
+
+**Sombra por câmera.** Desligada por padrão (`cameras.sombra_ativa`); só admin liga/desliga. Cada sessão de IA recebe no início uma `PortaSombra` fixa; ligar, desligar ou trocar de receita só muda o alvo da porta (um `DespachoSombra` com fila limitada), **sem reiniciar a análise**. Montagem (carregar modelos) ocorre num laço de fundo, não na requisição nem no laço da câmera. Eventos ficam num buffer em memória e em `runtime/sombra/camera-<id>.jsonl`; **nunca** passam por `PainelEventos`, dispatcher de destinos nem `events.jsonl`. Estados: desligada, aguardando (sem IA rodando ou ainda montando), ativa, erro.
+
+**Processamento (admin).** Só o que existe: serviço, go2rtc, sessões de IA, especialistas ativos, sombra. Nós remotos: "não implementado". O dispositivo da sessão aparece como "—" porque o gerente de IA ainda não o expõe.
+
+**Segurança.** Mutações exigem admin no servidor, CSRF e geram auditoria; abrir páginas não altera estado.
+
+**Relatório.** `/painel/relatorio` deixou de ser "em construção": filtros por câmera, situação, período.
+
+**Concorrência da sombra.** Mutações commitadas incrementam uma revisão (`PainelServicos.acordar()` / `desligar_agora`); a reconciliação só publica se a revisão do seu snapshot ainda vale, e cada montagem tem identidade: resultado de montagem aposentada vai só ao rastro (`aposentado: true`), nunca ao feed.
+
+**Receitas contrato 2 (lote 03b).** O formulário edita só o contrato 1; relações entre trilhas e persistência entram por **importação JSON** (`POST /painel/receitas/importar`, admin, CSRF, auditoria), validadas contra os especialistas ativos e gravadas como versão imutável. Editar pelo formulário o que ele não preserva é recusado com explicação. O feed de sombra mostra eventos `cena` (papéis, relações, estado e transição dos eventos de persistência). Tudo em sombra. Ver [03b](etapas_motor/03b_cena_regras.md).

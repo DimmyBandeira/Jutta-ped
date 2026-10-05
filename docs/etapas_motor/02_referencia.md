@@ -76,4 +76,10 @@ idade da observação não inclui captura física, rede nem navegador; o perfil 
 
 ## Resultado de encerramento
 
+### Preparação de fechamento após `d16dab6`
+
+Ver [resolução das cinco pendências](../referencia/2026-10-04/fechamento/README.md). Os 100 testes do avaliador foram reexecutados e passaram. Critérios desta referência definidos: DVR-1 em 9,2 s (saída do adulto do campo, não começo do afastamento); DVR-3 em 2,4 s e 10,4 s. Revisão explicitamente **não cega**. Rascunhos derivados preparados, sem alterar as propostas originais nem declarar confirmação humana.
+
+O DVR-1 corresponde por SHA-256 a uma entrada do `5° ANDAR.zip`. Isso documenta a origem local, mas não substitui a declaração do responsável. Inventário do ZIP não encontrou vídeo longo: os 11 AVI somam 210 s, com possíveis equivalentes DAV que não devem ser contados duas vezes. Faltam nome/declarações do revisor, confirmação da procedência e gravação negativa mais longa. A etapa permanece em andamento.
+
 Pendente (depende da revisão humana). Ao concluir: preencher data, episódios revisados e métricas, e mover este registro para `docs/historico/motor_plugins/`.

@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Análise — {{ cam.nome }} — Jutta Ped{% endblock %}
+{% block titulo_pagina %}Análise da câmera: {{ cam.nome }}{% endblock %}
+{% block acoes_pagina %}
+<a class="btn" href="/painel/cameras">Voltar às câmeras</a>
+<a class="btn" href="/painel/cameras/{{ cam.id }}/diagnostico">Diagnóstico do mestre</a>
+{% endblock %}
+{% block content %}
+{% set c = cfg or {} %}
+{% if flash %}<div class="mensagem {{ 'ok' if (flash.tipo if flash is mapping else 'ok') == 'ok' else 'erro' }}" role="status">{{ flash.texto if flash is mapping else flash }}</div>{% endif %}
+{% if erro %}
+<div class="mensagem erro" role="alert">{{ erro }}
+  {% if problemas %}<ul>{% for p in problemas %}<li>{{ p }}</li>{% endfor %}</ul>{% endif %}
+</div>
+{% endif %}
+{% if legado %}
+<div class="mensagem aviso" role="note"><strong>Receita fora do modo simples.</strong> {{ legado }}
+  Ela continua funcionando como está. Para editar os ajustes desta câmera, escolha abaixo uma receita simples (um único especialista) ou marque a remoção da receita: é uma transição explícita, nada é convertido em silêncio.
+  <label class="opcao-grande" style="margin-top:.5rem"><input type="checkbox" name="remover_receita" value="1" form="form-analise"> Remover a receita desta câmera (a sombra será desligada)</label></div>
+{% endif %}
+
+<div class="mensagem aviso" role="note">
+  Modo simples: <strong>um especialista</strong> e <strong>uma receita</strong> por câmera (a receita pode usar vários atributos e relacionar várias trilhas). Tudo continua em <strong>sombra</strong>: nada aqui gera alertas.
+  Salvar cria uma <strong>versão nova</strong> da configuração, <strong>não reinicia</strong> a análise operacional e descarta o estado e os atributos da configuração anterior. Se houver erro, nada é gravado.
+</div>
+
+<form class="painel" method="post" action="/painel/cameras/{{ cam.id }}/analise" id="form-analise">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  <div class="cartao">
+    <h4>1. Mestre (detecção e rastreamento)</h4>
+    <p class="aviso" style="margin-top:0">Classe mestre: <strong>person</strong> (fixa neste modo). O mestre produz a <strong>Cena</strong> e os recortes sem precisar de especialista nem de receita: use o <a href="/painel/cameras/{{ cam.id }}/diagnostico">diagnóstico do mestre</a> para conferir caixas, trilhas e recortes.</p>
+  </div>
+
+  <div class="cartao">
+    <h4>2. Especialista</h4>
+    <label for="a-esp">Especialista desta câmera</label>
+    <select id="a-esp" name="especialista">
+      <option value="">— nenhum (só diagnóstico do mestre) —</option>
+      {% for e in especialistas_compat or [] %}
+      <option value="{{ e.id }}" {{ 'selected' if c.especialista == e.id else '' }}>{{ e.nome }} · {{ e.id }} · v{{ e.versao }}</option>
+      {% endfor %}
+    </select>
+    {% if not especialistas_compat %}<p class="aviso">Nenhum especialista compatível ativo (fonte visível, classe mestre person). Instale e ative um em <a href="/painel/especialistas">Especialistas</a>.</p>{% endif %}
+    {% for e in especialistas_compat or [] %}
+    <p class="aviso" style="margin:.2rem 0">{{ e.id }}: atributos {% for a in e.atributos %}<code>{{ a.nome }}</code> ({{ a.tipo }}){% if not loop.last %}, {% endif %}{% endfor %}</p>
+    {% endfor %}
+  </div>
+
+  <div class="cartao">
+    <h4>3. Receita</h4>
+    <label for="a-rec">Versão da receita (somente as que usam só o especialista escolhido)</label>
+    <select id="a-rec" name="receita_versao_id">
+      <option value="">— sem receita —</option>
+      {% for r in receitas_compat or [] %}
+      <option value="{{ r.versao_id }}" {{ 'selected' if c.receita_versao_id|string == r.versao_id|string else '' }} {{ '' if r.valida else 'disabled' }}>{{ r.label }}{% if not r.valida %} (inválida agora){% endif %}</option>
+      {% endfor %}
+    </select>
+    {% for r in receitas_compat or [] %}{% if not r.valida %}<p class="aviso" style="margin:.2rem 0">{{ r.label }}: {{ r.motivos | join('; ') }}</p>{% endif %}{% endfor %}
+    {% if receitas_fora_modo %}
+    <details style="margin-top:.5rem"><summary>Receitas fora do modo simples ({{ receitas_fora_modo|length }})</summary>
+      <ul>{% for r in receitas_fora_modo %}<li><strong>{{ r.label }}</strong>: {{ r.motivo }}</li>{% endfor %}</ul>
+      <p class="aviso">Preservadas e sem alteração; não podem ser associadas a esta câmera neste modo.</p>
+    </details>
+    {% endif %}
+  </div>
+
+  <div class="cartao">
+    <h4>4. Perfil e região de análise (ROI)</h4>
+    <label for="a-perfil">Perfil de ajustes (sugestão; os campos preenchidos abaixo prevalecem)</label>
+    <select id="a-perfil" name="perfil">
+      <option value="">— nenhum —</option>
+      {% for p in perfis or [] %}<option value="{{ p.nome }}" {{ 'selected' if c.perfil == p.nome else '' }}>{{ p.nome }} — {{ p.descricao }}</option>{% endfor %}
+    </select>
+    <label class="opcao-grande" style="margin-top:.8rem"><input type="checkbox" name="roi_ativa" value="1" {{ 'checked' if c.roi_ativa else '' }}> Limitar a análise a uma região (ROI)</label>
+    <p class="aviso">Percentuais do quadro (0–100). Pessoas <strong>fora</strong> da região continuam na Cena (contexto das relações), mas não recebem especialista; a caixa pública segue em pixels do quadro original.</p>
+    <div class="linha">
+      <div><label for="roi-x1">Esquerda (%)</label><input id="roi-x1" type="number" min="0" max="100" step="any" name="roi_x1" value="{{ c.roi_x1 if c.roi_x1 is not none and c.roi_x1 is defined else '' }}"></div>
+      <div><label for="roi-y1">Topo (%)</label><input id="roi-y1" type="number" min="0" max="100" step="any" name="roi_y1" value="{{ c.roi_y1 if c.roi_y1 is not none and c.roi_y1 is defined else '' }}"></div>
+      <div><label for="roi-x2">Direita (%)</label><input id="roi-x2" type="number" min="0" max="100" step="any" name="roi_x2" value="{{ c.roi_x2 if c.roi_x2 is not none and c.roi_x2 is defined else '' }}"></div>
+      <div><label for="roi-y2">Base (%)</label><input id="roi-y2" type="number" min="0" max="100" step="any" name="roi_y2" value="{{ c.roi_y2 if c.roi_y2 is not none and c.roi_y2 is defined else '' }}"></div>
+    </div>
+    <div class="linha">
+      <div><label for="roi-crit">Quando uma pessoa conta como dentro</label>
+        <select id="roi-crit" name="roi_criterio">
+          {% for v, t in [('ponto_de_apoio','Pés (centro da borda inferior) dentro da região'), ('centro','Centro da caixa dentro da região'), ('intersecao','Parte suficiente da caixa dentro da região')] %}
+          <option value="{{ v }}" {{ 'selected' if (c.roi_criterio or 'ponto_de_apoio') == v else '' }}>{{ t }}</option>{% endfor %}
+        </select></div>
+      <div><label for="roi-int">Fração mínima da caixa (%, só para “parte suficiente”)</label>
+        <input id="roi-int" type="number" min="1" max="100" step="any" name="roi_intersecao_min" value="{{ c.roi_intersecao_min if c.roi_intersecao_min is not none and c.roi_intersecao_min is defined else '' }}"></div>
+    </div>
+  </div>
+
+  <div class="cartao">
+    <h4>5. Recorte (crop) entregue ao especialista</h4>
+    <p class="aviso" style="margin-top:0">Folga ao redor da caixa, <strong>por lado</strong>, como % da largura (horizontal) e da altura (vertical), com um <strong>mínimo em pixels</strong>. A <em>margem única</em> é um atalho que define os dois eixos; os campos específicos têm precedência e as margens <strong>nunca são somadas</strong>. Ordem de precedência: campo preenchido aqui › perfil › receita › zero.</p>
+    <div class="linha">
+      <div><label for="c-m">Margem única (%)</label><input id="c-m" type="number" min="0" max="100" step="any" name="crop_margem" value="{{ c.crop_margem if c.crop_margem is not none and c.crop_margem is defined else '' }}"></div>
+      <div><label for="c-h">Horizontal (%)</label><input id="c-h" type="number" min="0" max="100" step="any" name="crop_margem_h" value="{{ c.crop_margem_h if c.crop_margem_h is not none and c.crop_margem_h is defined else '' }}"></div>
+      <div><label for="c-v">Vertical (%)</label><input id="c-v" type="number" min="0" max="100" step="any" name="crop_margem_v" value="{{ c.crop_margem_v if c.crop_margem_v is not none and c.crop_margem_v is defined else '' }}"></div>
+      <div><label for="c-p">Mínimo (px por lado)</label><input id="c-p" type="number" min="0" max="200" step="1" name="crop_minimo_px" value="{{ c.crop_minimo_px if c.crop_minimo_px is not none and c.crop_minimo_px is defined else '' }}"></div>
+    </div>
+    <p class="aviso">O tamanho mínimo da <strong>pessoa</strong> exigido pelo pacote (<code>altura_minima_px</code>) é outra coisa e continua valendo.</p>
+  </div>
+
+  <div class="cartao">
+    <h4>6. Execução</h4>
+    <p class="aviso" style="margin-top:0">Limites dentro do que o pacote e a receita permitem: a validade só pode <strong>diminuir</strong>, nunca passar da declarada no pacote.</p>
+    <div class="linha">
+      <div><label for="x-o">Orçamento por quadro (ms)</label><input id="x-o" type="number" min="1" max="60000" step="1" name="exec_orcamento_ms" value="{{ c.exec_orcamento_ms if c.exec_orcamento_ms is not none and c.exec_orcamento_ms is defined else '' }}"></div>
+      <div><label for="x-v">Validade máxima dos atributos (ms)</label><input id="x-v" type="number" min="1" max="3600000" step="1" name="exec_validade_max_ms" value="{{ c.exec_validade_max_ms if c.exec_validade_max_ms is not none and c.exec_validade_max_ms is defined else '' }}"></div>
+      <div><label for="x-i">Intervalo mínimo entre quadros analisados (s)</label><input id="x-i" type="number" min="0" max="60" step="any" name="exec_intervalo_min_s" value="{{ c.exec_intervalo_min_s if c.exec_intervalo_min_s is not none and c.exec_intervalo_min_s is defined else '' }}"></div>
+    </div>
+  </div>
+
+  <div class="rodape-form">
+    <button class="btn primary" type="submit">Salvar configuração</button>
+    <a class="btn" href="/painel/cameras">Cancelar</a>
+  </div>
+</form>
+
+<section class="secao" aria-labelledby="tit-efetivo">
+  <h4 id="tit-efetivo">Configuração efetiva</h4>
+  {% if efetivo %}
+  <p>Versão <strong>{{ efetivo.versao }}</strong> · <code title="{{ efetivo.config_hash }}">{{ (efetivo.config_hash or '')[:12] }}</code>
+     · especialista: {{ efetivo.especialista or '— nenhum —' }} · receita: {{ efetivo.receita_label or '— nenhuma —' }}</p>
+  {% set aj = efetivo.ajustes or {} %}
+  <ul class="cond">
+    {% if aj.roi %}<li class="cond-txt">ROI: ({{ (aj.roi.x1 * 100)|round(1) }}%, {{ (aj.roi.y1 * 100)|round(1) }}%) → ({{ (aj.roi.x2 * 100)|round(1) }}%, {{ (aj.roi.y2 * 100)|round(1) }}%) · critério {{ aj.roi.criterio }}{% if aj.roi.criterio == 'intersecao' %} ≥ {{ (aj.roi.intersecao_min * 100)|round(0)|int }}%{% endif %}</li>{% else %}<li class="cond-txt">ROI: quadro inteiro</li>{% endif %}
+    {% if aj.crop %}<li class="cond-txt">Recorte: horizontal {{ (aj.crop.margem_h * 100)|round(1) if aj.crop.margem_h is not none else '—' }}% · vertical {{ (aj.crop.margem_v * 100)|round(1) if aj.crop.margem_v is not none else '—' }}%{% if aj.crop.margem is not none %} · margem única {{ (aj.crop.margem * 100)|round(1) }}%{% endif %} · mínimo {{ aj.crop.minimo_px if aj.crop.minimo_px is not none else '—' }} px</li>{% endif %}
+    {% if aj.execucao %}<li class="cond-txt">Execução: orçamento {{ aj.execucao.orcamento_ms if aj.execucao.orcamento_ms is not none else '—' }} ms · validade máx. {{ aj.execucao.validade_max_ms if aj.execucao.validade_max_ms is not none else '—' }} ms · intervalo mín. {{ aj.execucao.intervalo_min_s }} s</li>{% endif %}
+    {% if aj.perfil %}<li class="cond-txt">Perfil: {{ aj.perfil }}</li>{% endif %}
+  </ul>
+  {% else %}<p class="aviso">Ainda não há configuração salva para esta câmera (valores padrão: quadro inteiro, sem especialista nem receita).</p>{% endif %}
+  <p class="aviso">Diagnóstico do mestre: <strong>{{ 'ligado' if diagnostico_ativo else 'desligado' }}</strong> · Sombra: <strong>{{ sombra_estado or 'desligada' }}</strong>. A sombra é ligada por câmera em <a href="/painel/receitas">Receitas</a>.</p>
+</section>
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Processamento — Jutta Ped{% endblock %}
+{% block titulo_pagina %}Processamento{% endblock %}
+{% block acoes_pagina %}<a class="btn" href="/painel/processamento">Atualizar</a>{% endblock %}
+{% block content %}
+<p class="subtitulo">Situação real do que está rodando neste servidor. Esta página só consulta: abrir ou atualizar não altera a análise.</p>
+{% set p = proc or {} %}
+{% set sv = p.servico or {} %}
+{% set g = p.go2rtc or {} %}
+{% set so = p.sombra or {} %}
+{% set nr = p.nos_remotos or {} %}
+
+<div class="grade-proc">
+  <section class="secao" aria-labelledby="pr-servico">
+    <h4 id="pr-servico">Serviço</h4>
+    <dl class="dados">
+      <dt>Iniciado em</dt><dd>{{ sv.iniciado_em or '—' }}</dd>
+      <dt>Serviço de análise (IA)</dt><dd>{% if sv.ia_disponivel %}<span class="badge online">disponível</span>{% else %}<span class="badge offline">indisponível</span>{% endif %}</dd>
+      <dt>Limite de câmeras com IA</dt><dd>{{ sv.max_cameras_ia if sv.max_cameras_ia is not none else '—' }}</dd>
+    </dl>
+  </section>
+
+  <section class="secao" aria-labelledby="pr-go2rtc">
+    <h4 id="pr-go2rtc">go2rtc</h4>
+    <dl class="dados">
+      <dt>API</dt><dd>{% if g.api_ok %}<span class="badge online">respondendo</span>{% else %}<span class="badge offline">sem resposta</span>{% endif %}</dd>
+      <dt>Streams</dt><dd>{{ g.streams if g.streams is not none else '—' }}</dd>
+      <dt>Câmeras sincronizadas</dt><dd>{{ g.sincronizadas if g.sincronizadas is not none else '—' }}</dd>
+    </dl>
+  </section>
+</div>
+
+<section class="secao" aria-labelledby="pr-sessoes">
+  <h4 id="pr-sessoes">Sessões de IA</h4>
+  {% if p.sessoes %}
+  <div class="tabela-wrap"><table>
+    <thead><tr><th scope="col">Câmera</th><th scope="col">Estado</th><th scope="col">Quadros</th><th scope="col">Popups</th><th scope="col">Dispositivo</th><th scope="col">Último erro</th></tr></thead>
+    <tbody>
+    {% for s in p.sessoes %}
+      <tr><td>{{ s.camera }}</td><td>{{ s.estado }}</td><td>{{ s.frames }}</td><td>{{ s.popups }}</td><td>{{ s.dispositivo or '—' }}</td><td>{{ s.ultimo_erro or '—' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<div class="vazio">Nenhuma sessão de análise em execução{% if not sv.ia_disponivel %} (serviço de análise indisponível){% endif %}.</div>{% endif %}
+</section>
+
+<section class="secao" aria-labelledby="pr-exec">
+  <h4 id="pr-exec">Executor local / especialistas</h4>
+  {% if p.especialistas %}
+  <div class="tabela-wrap"><table>
+    <thead><tr><th scope="col">Especialista</th><th scope="col">Versão ativa</th><th scope="col">Identidade</th></tr></thead>
+    <tbody>{% for e in p.especialistas %}<tr><td>{{ e.id }}</td><td>{{ e.versao }}</td><td><code>{{ e.identidade_curta }}</code></td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% else %}<div class="vazio">Nenhum especialista ativo. Gerencie em <a href="/painel/especialistas">Especialistas</a>.</div>{% endif %}
+</section>
+
+<section class="secao" aria-labelledby="pr-sombra">
+  <h4 id="pr-sombra">Sombra (diagnóstico — não são alertas)</h4>
+  <p class="aviso" style="margin-top:0">Câmeras com sombra ativa: <strong>{{ so.ativas if so.ativas is not none else '—' }}</strong></p>
+  {% if so.cameras %}
+  <div class="tabela-wrap" style="margin-top:.6rem"><table>
+    <thead><tr><th scope="col">Câmera</th><th scope="col">Estado</th><th scope="col">Enfileirados</th><th scope="col">Descartados</th><th scope="col">Processados</th><th scope="col">Erro</th></tr></thead>
+    <tbody>{% for sc in so.cameras %}
+      <tr><td>{{ sc.nome }}</td><td><span class="badge {{ 'offline' if sc.estado == 'erro' else ('sombra' if sc.estado == 'ativa' else 'neutro') }}">{{ sc.estado }}</span></td><td>{{ sc.enfileirados }}</td><td>{{ sc.descartados }}</td><td>{{ sc.processados }}</td><td>{{ sc.erro or '—' }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}<div class="vazio">Nenhuma câmera com sombra ligada.</div>{% endif %}
+</section>
+
+<section class="secao" aria-labelledby="pr-nos">
+  <h4 id="pr-nos">Nós remotos</h4>
+  <p><span class="badge neutro">Não implementado</span></p>
+  <p class="aviso">{{ nr.texto or 'Nós remotos de processamento ainda não existem neste sistema; nada aqui está operacional.' }}</p>
+</section>
+{% endblock %}

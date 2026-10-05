@@ -1,6 +1,6 @@
 # Plano de trabalho — sistema-mãe, especialistas e nós
 
-Estado: **ativo — etapa 01 em andamento (documentação)**.
+Estado: **ativo — 05f implementado em sombra, validação dos dois níveis em andamento. Referência de qualidade em confirmação.**
 Início: 04/10/2026.
 Branch: `feature/motor-plugins-nos`.
 Base: `2e8b06a7e7228f497a5220baad3065313e8a21be`, originada de
@@ -28,9 +28,9 @@ Este plano organiza o trabalho; os contratos vigentes ficam nos documentos técn
 |---|---|---|---|
 | 01 — Contratos autossuficientes | `docs/manual_especialista.md` e `docs/protocolo_nos.md` | Um autor externo consegue entender pacote, entrada, saída, validade e compatibilidade sem abrir o código da mãe; exemplos e decisões pendentes identificados | Em andamento: [registro](etapas_motor/01_contratos.md) |
 | 02 — Referência reproduzível | Bateria em `tools/`, relatório e vídeos/episódios de referência identificados | Custo e qualidade atuais medidos com procedimento reproduzível; hipótese de GIL avaliada com perfil | Em andamento: custo e GIL medidos ([registro](etapas_motor/02_referencia.md), [relatório](referencia/2026-10-04/RELATORIO.md)); **qualidade bloqueada por revisão humana dos episódios** |
-| 03 — Motor mínimo e migração | Mestre, especialista pediátrico e receita no contrato novo | Comparação em modo sombra com a etapa 02; alertas perdidos, falsos e repetidos avaliados; diferenças justificadas | Pendente |
+| 03 — Motor mínimo e migração | Mestre, especialista pediátrico e receita no contrato novo | Comparação em modo sombra com a etapa 02; alertas perdidos, falsos e repetidos avaliados; diferenças justificadas | Em andamento parcial: caminho genérico câmera → crop → especialista → receita em sombra implementado ([03](etapas_motor/03_motor_minimo.md)); Cena genérica, mestre compartilhado e regras entre trilhas/persistência em sombra ([03b](etapas_motor/03b_cena_regras.md)); adaptação do classificador atual **parcial** (pacote de papel compatível, migração não concluída); comparação de qualidade pendente |
 | 04 — Executor compartilhado | Modelos compartilhados por configuração compatível, lotes e filas limitadas | Memória, latência, justiça entre câmeras, expiração e falhas validadas sob carga | Pendente |
-| 05 — Pacotes e prontidão da mãe | Schema executável, molde declarativo, comando validador, instalação/ativação/retorno de versão e receitas | Pediatria e segundo pacote de conformidade funcionam sem caminhos especiais; pacote compatível entra sem editar o host | Em andamento parcial: schema, validador estático e molde ([05a](etapas_motor/05a_schema_validador.md)) ciclo local de instalação, ativação e retorno de versão ([05b](etapas_motor/05b_instalacao_local.md)) e administração pelo painel ([05c](etapas_motor/05c_painel_especialistas.md)) e executor local mínimo com segundo pacote de conformidade ([05d](etapas_motor/05d_executor_local.md)) entregues; receitas e migração da pediatria pendentes |
+| 05 — Pacotes e prontidão da mãe | Schema executável, molde declarativo, comando validador, instalação/ativação/retorno de versão e receitas | Pediatria e segundo pacote de conformidade funcionam sem caminhos especiais; pacote compatível entra sem editar o host | Em andamento parcial: schema, validador estático e molde ([05a](etapas_motor/05a_schema_validador.md)) ciclo local de instalação, ativação e retorno de versão ([05b](etapas_motor/05b_instalacao_local.md)) e administração pelo painel ([05c](etapas_motor/05c_painel_especialistas.md)) e executor local mínimo com segundo pacote de conformidade ([05d](etapas_motor/05d_executor_local.md)) entregues; lote de interface do dashboard, receitas e sombra por câmera em andamento ([05e](etapas_motor/05e_dashboard_sistema_mae.md)); receitas e migração da pediatria pendentes |
 | 06 — Workspace de especialistas | Projeto separado com contrato, molde e validação utilizáveis | Pacote produzido fora do repositório é validado e instalado no sistema-mãe | Pendente |
 | 07 — Fusão térmica | Calibração, associação de fontes e atributos relativos | Erro geométrico, sincronismo e perda de fonte exercitados com dados reais | Pendente |
 | 08 — Nós de execução | Um nó inicialmente, transporte, capacidades e métricas | Ganho sobre o local demonstrado; queda, duplicação, expiração e incompatibilidade tratadas | Pendente |
@@ -43,9 +43,100 @@ essa etapa marca sua entrega integrada ao ciclo de instalação.
 Essa antecipação ocorreu em 04/10/2026 (lote 05a). A etapa 05 só será concluída com o ciclo
 de instalação integrado e os demais critérios da tabela.
 
-A ação atual é documental. Esta lista não inicia automaticamente código, benchmarks, criação do
-workspace externo ou execução de nós. Os números de 4 câmeras, idade de observação ~1 s e alerta
+O trabalho já ultrapassou a fase documental: validador, instalação, painel, executor local e integração
+em sombra foram implementados parcialmente, com evolução registrada em 03, 03b e 05e.
+O [retorno do motor mínimo](retorno_claude_motor_minimo.md) registra um lote anterior. A prioridade
+atual é validar o lote **05f**, implementado em sombra e registrado em
+[`05f_configuracao_camera.md`](etapas_motor/05f_configuracao_camera.md), com pendências de integração real.
+Os números de 4 câmeras, idade de observação ~1 s e alerta
 ~2 s continuam metas de ensaio com condições de medição a fechar, conforme a transição.
+
+### Prioridade ajustada após `d16dab6`
+
+A etapa 02 mede o caminho pediátrico atual; ela não demonstra sozinha integração de pacotes com câmeras.
+A conexão genérica em sombra e a Cena foram acrescentadas nos lotes 03/03b, mantendo o caminho
+pediátrico operacional durante a transição. Pode-se evoluir e testar a integração enquanto a referência
+humana é finalizada. Aprovar equivalência da pediatria ou substituir o caminho operacional continua dependendo
+da comparação de qualidade. A coleta de negativo longo não bloqueia construir os contratos e o fluxo genérico.
+
+### 05f — Configuração simples por câmera e validação em dois níveis
+
+**Decisão consolidada em 05/10/2026. Estado: implementado em sombra, validação em andamento.** Sublote da etapa 05,
+apoiado no motor/Cena de 03/03b e no dashboard 05e. Esta seção preserva o planejamento;
+o resultado e os limites estão em `docs/etapas_motor/05f_configuracao_camera.md`.
+
+**Objetivo:** permitir configurar e testar cada câmera pelo fluxo normal do painel, com o caminho
+**mestre → recortes → um especialista → uma receita**, sem exigir combinações arbitrárias na primeira versão.
+O núcleo continua genérico; a limitação é do modo de operação e deve ser validada no servidor, inclusive
+em importações/API, não apenas escondida no formulário. Não criar condicionais por nome de câmera,
+especialista ou receita no host.
+
+#### Escopo e configurações
+
+| Item | Regra inicial |
+|---|---|
+| Mestre | Detecção e rastreamento de `person`, sem exigir classificação criança/adulto para produzir Cena e crops. Outras classes só serão liberadas com compatibilidade e validação explícitas. |
+| Especialista | No máximo um especialista selecionado por câmera neste modo, compatível com a classe mestre e fonte. O mesmo pacote instalado pode atender várias câmeras. |
+| Receita | Uma versão de receita por câmera, usando somente o especialista selecionado. Pode consumir vários atributos dele e relacionar várias trilhas; um especialista não significa uma pessoa por vez. |
+| Diagnóstico da mãe | Permitir câmera somente com mestre/rastreamento/recortes, sem especialista nem receita de análise ativos. Não gerar veredito especializado fictício. |
+| ROI | Região de análise da câmera, distinta da margem do crop. Formalizar seleção de detecções na borda, referência de coordenadas e preservação de contexto antes de implementar; a bbox pública continua referida ao quadro original. |
+| Crop | Margem horizontal, margem vertical e mínimo em pixels; manter margem única como atalho compatível. Especificar precedência sem somar margens duas vezes. Ajustar aos limites do quadro e preservar a transformação. |
+| Execução | Cadência, orçamento desde a recepção e validade dentro dos limites do pacote/receita. A câmera não pode ampliar validade além do contrato nem forçar formato não suportado. |
+| Padrões | Perfil compatível sugere padrões; a câmera guarda seus ajustes e a configuração efetiva versionada/identificável. Definir onde o perfil é persistido e sua precedência na implementação; não inventar campos no manifesto sem versionar o contrato. |
+
+O perfil pediátrico pode reproduzir as margens legadas (12% horizontal, 8% vertical, mínimo de 8 px),
+depois de conferir a fórmula no código. Esses valores não são padrão universal para todo especialista.
+O tamanho mínimo do alvo exigido pelo pacote é diferente do mínimo de margem do crop.
+
+#### Travas e compatibilidade
+
+- Recusar mistura de especialistas na mesma câmera no modo simples; não impedir múltiplos atributos/classes
+  de saída do único pacote quando o contrato e a receita os suportarem.
+- Mostrar receitas compatíveis e revalidar ao salvar, associar e trocar a versão ativa do pacote.
+  Mudança incompatível deve ser explícita e não produzir um falso resultado negativo.
+- Preservar receitas existentes com múltiplos especialistas e seus dados. Identificá-las como fora do modo
+  simples; não converter, apagar ou alterar silenciosamente sua execução. Definir uma transição explícita
+  para câmeras já associadas antes de habilitar o modo simples nelas.
+- Aplicar configurações atomicamente: falha mantém a anterior; sucesso invalida atributos e estado temporal
+  afetados e impede publicação tardia da configuração anterior. Ajustar ROI/crop não deve reiniciar a análise
+  operacional sem necessidade nem misturar configurações no mesmo diagnóstico.
+- Mutação administrativa com autorização no servidor, CSRF e auditoria; uso normal pelo formulário, sem
+  exigir Python ou edição direta do banco. Cadastro de câmera segue o fluxo padrão existente.
+- Manter execução das novas receitas em sombra. Ativação de pacote, habilitação de sombra e ativação
+  operacional de alertas continuam sendo operações distintas.
+
+#### Sequência de implementação e evidências
+
+1. **Consolidar contratos mestre/crop:** conferir Cena, Observação, Recorte e Pedido contra o manual;
+   documentar quais metadados ficam na mãe e quais chegam ao especialista, identidade de trilha,
+   transformação geométrica, ROI, margens, formato e prazo. Não presumir que o envelope documental
+   completo já é transmitido pelo executor local.
+2. **Persistir configuração simples por câmera:** defaults/perfil, ajustes, versão/hash e validações de
+   compatibilidade. Reutilizar serviços de receitas, especialistas e câmera, com migração se necessária.
+3. **Adaptar o painel:** seleção de especialista/receita compatível, ROI/crop e parâmetros permitidos;
+   diagnóstico mestre sem especialista, estados claros e indicação de configuração incompatível.
+4. **Validar nível 1 — mãe/mestre/crop:** go2rtc com vídeos em loop cadastrados pelo painel; pessoas,
+   cruzamentos, oclusões, cena vazia, bordas do ROI e reinício. Conferir bbox/trilhas, crop correto por
+   sujeito, margens e coordenadas, sem carregar o especialista de papel como requisito do mestre.
+5. **Validar nível 2 — especialista/receita:** primeiro pacote determinístico para conferir identidade,
+   despacho e validade; depois pacote/modelo real compatível com trechos positivos, negativos e ambíguos.
+   Demonstrar duas câmeras com especialistas diferentes e duas com o mesmo pacote e ajustes distintos,
+   sem vazamento de atributos ou configuração. Compartilhar pacote não prova execução compartilhada
+   eficiente: isso continua sendo etapa 04.
+6. **Registrar resultado:** separar teste de interface, contrato, inferência real e qualidade. Falta de
+   go2rtc ou fonte deve constar como pendência, não teste aprovado. A virada do loop é descontinuidade
+   controlada; repetição não aumenta diversidade nem exposição independente de avaliação.
+
+**Critérios para concluir 05f:** configuração básica inteiramente operável pelo painel; restrições
+aplicadas também no backend; receitas anteriores preservadas; teste do mestre/crop independente do
+especialista; execução de especialista real pelo caminho normal; isolamento entre câmeras e configurações;
+ausência de eventos antigos após alteração; vídeo/overlay/crops conferidos em navegador e evidências
+registradas sem versionar imagens de pessoas. Isso não conclui automaticamente a migração pediátrica,
+a etapa 02 ou a etapa 05 inteira.
+
+**Fora deste lote:** composição livre de especialistas, várias receitas simultâneas por câmera, novas
+classes sem validação, nós remotos, fusão térmica, treinamento e otimização do executor compartilhado.
+A limitação poderá ser ampliada depois de medir necessidade e custo; não remover a extensibilidade do núcleo.
 
 ## Como conduzir uma etapa
 

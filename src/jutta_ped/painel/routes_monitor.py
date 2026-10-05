@@ -12,6 +12,8 @@ from src.jutta_ped.painel.config_service import ler_config
 from src.jutta_ped.painel.deps import DbDep, render, usuario_atual, verifica_csrf
 from src.jutta_ped.painel.go2rtc import PREFIXO_STREAM, nome_stream
 from src.jutta_ped.painel.models import Camera, Fabricante, Usuario
+from src.jutta_ped.painel.receitas_service import hash_curto, resumos_config, rotulos_versoes
+from src.jutta_ped.painel.sombra_service import estado_para_camera
 
 router = APIRouter(prefix="/painel", dependencies=[Depends(verifica_csrf)])
 
@@ -58,7 +60,8 @@ def estado_ia(camera: Camera, servicos) -> tuple[bool, str | None, str | None]:
     return True, status.get("operational_status") or "ANALISANDO", None
 
 
-def visao_camera(camera: Camera, cfg: dict[str, Any], servicos, request: Request) -> SimpleNamespace:
+def visao_camera(camera: Camera, cfg: dict[str, Any], servicos, request: Request, rotulos: dict[int, str] | None = None,
+                 configs: dict[int, tuple[int, str]] | None = None) -> SimpleNamespace:
     nome = nome_stream(camera)
     pronta = bool(nome) and (not camera.gerenciada_pelo_sync or camera.go2rtc_sync == "ok")
     ia_ativa, ia_estado, ia_erro = estado_ia(camera, servicos)
@@ -66,6 +69,7 @@ def visao_camera(camera: Camera, cfg: dict[str, Any], servicos, request: Request
         sync_texto = "stream de teste"
     else:
         sync_texto = {"ok": "stream sincronizado", "erro": "erro ao sincronizar go2rtc"}.get(camera.go2rtc_sync, "sincronizando go2rtc…")
+    sombra_estado, sombra_erro = estado_para_camera(getattr(servicos, "sombra", None), camera)
     return SimpleNamespace(
         id=camera.id,
         nome=camera.nome,
@@ -75,6 +79,14 @@ def visao_camera(camera: Camera, cfg: dict[str, Any], servicos, request: Request
         ia_erro=ia_erro,
         go2rtc_sync=camera.go2rtc_sync,
         sync_texto=sync_texto,
+        go2rtc_estado=servicos.go2rtc_estado()[0],
+        receita_label=(rotulos or {}).get(camera.receita_versao_id) if camera.receita_versao_id else None,
+        sombra_ativa=bool(camera.sombra_ativa),
+        sombra_estado=sombra_estado,
+        sombra_erro=sombra_erro,
+        config_versao=(configs or {}).get(camera.id, (None, None))[0],
+        config_hash=hash_curto((configs or {}).get(camera.id, (None, None))[1]),
+        diagnostico_ativo=bool(camera.diagnostico_ativo),
     )
 
 
@@ -86,8 +98,12 @@ def _cameras(db: Session) -> list[Camera]:
 def monitoramento(request: Request, usuario: Usuario = Depends(usuario_atual), db: Session = DbDep):
     servicos = request.app.state.painel
     cfg = ler_config(db)
-    cameras = [visao_camera(c, cfg, servicos, request) for c in _cameras(db)]
-    return render(request, "monitoramento.html", usuario, cameras=cameras, ativo="monitoramento")
+    lista = _cameras(db)
+    rotulos = rotulos_versoes(db, {c.receita_versao_id for c in lista if c.receita_versao_id})
+    configs = resumos_config(db)
+    cameras = [visao_camera(c, cfg, servicos, request, rotulos, configs) for c in lista]
+    opcoes = [{"id": c.id, "nome": c.nome} for c in lista]
+    return render(request, "monitoramento.html", usuario, cameras=cameras, cameras_opcoes=opcoes, ativo="monitoramento")
 
 
 @router.get("/cameras/{camera_id}/ia-estado")
@@ -95,7 +111,7 @@ def ia_estado(camera_id: int, request: Request, usuario: Usuario = Depends(usuar
     camera = db.get(Camera, camera_id)
     if camera is None:
         return render(request, "partials/ia_estado.html", usuario, c=SimpleNamespace(ia_ativa=False, ia_estado=None, ia_erro=None))
-    visao = visao_camera(camera, ler_config(db), request.app.state.painel, request)
+    visao = visao_camera(camera, ler_config(db), request.app.state.painel, request, rotulos_versoes(db, {camera.receita_versao_id} if camera.receita_versao_id else set()), resumos_config(db))
     return render(request, "partials/ia_estado.html", usuario, c=visao)
 
 

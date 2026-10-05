@@ -196,11 +196,19 @@ class PainelEventos:
             visoes = [(e.id, para_visao(e)) for e in reversed(eventos)]
         return [SimpleNamespace(id_db=i, **vars(v)) for i, v in visoes]
 
-    def recentes(self, limite: int = 15, incluir_suprimidos: bool = False) -> list[SimpleNamespace]:
-        """Ultimos alertas. Suprimidos (cooldown) ficam de fora por padrao: nao devem empurrar alertas reais."""
+    def agora(self) -> datetime:
+        return self._relogio()
+
+    def recentes(self, limite: int = 15, incluir_suprimidos: bool = False, camera_id: int | None = None, so_pendentes: bool = False) -> list[SimpleNamespace]:
+        """Ultimos alertas. Suprimidos (cooldown) ficam de fora por padrao: nao devem empurrar alertas reais.
+        `so_pendentes`: apenas os sem ciencia (nunca inclui suprimidos)."""
         consulta = select(EventoPediatria).order_by(EventoPediatria.id.desc()).limit(limite)
-        if not incluir_suprimidos:
+        if not incluir_suprimidos or so_pendentes:
             consulta = consulta.where(EventoPediatria.suprimido.is_(False))
+        if camera_id is not None:
+            consulta = consulta.where(EventoPediatria.camera_id == camera_id)
+        if so_pendentes:
+            consulta = consulta.where(EventoPediatria.reconhecido_em.is_(None))
         with self._database.session() as db:
             eventos = db.scalars(consulta).unique().all()
             return [para_visao(e) for e in eventos]

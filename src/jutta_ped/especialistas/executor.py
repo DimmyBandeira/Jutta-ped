@@ -112,6 +112,28 @@ def _backends_padrao() -> dict[str, Backend]:
     return {"pt": b, "openvino": b}
 
 
+def contrato_de_manifesto(manifesto: dict[str, Any], pid: str, versao: str, identidade: str) -> dict[str, Any]:
+    """Contrato (o que o host precisa saber para despachar e consumir) a partir do manifesto + identidade. Funcao PURA:
+    nao carrega modelos nem toca o disco (usada pelo executor e pela validacao leve do painel)."""
+    entrada = manifesto["entrada"]
+    return {"id": pid, "versao": versao, "identidade": identidade, "hashes": {m["id"]: m["sha256"] for m in manifesto["modelos"]},
+            "entrada": {"fonte": entrada["fonte"], "alvo": dict(entrada["alvo"]), "altura_minima_px": entrada.get("altura_minima_px", 0),
+                        "lote_max": entrada.get("lote_max", 1)},
+            "atributos": {a["nome"]: {"tipo": a["tipo"], "validade_ms": a["validade_ms"], "categorias": list(a.get("categorias", []))} for a in manifesto["atributos"]},
+            "parametros": {p["nome"]: {"min": p["min"], "max": p["max"], "padrao": p["padrao"]} for p in manifesto.get("parametros", [])}}
+
+
+def contrato_leve(instalador: Instalador, pid: str) -> dict[str, Any] | None:
+    """Contrato da versao ATIVA lendo so o manifesto (sem verificar hashes nem carregar modelos). None se nao ha ativo
+    utilizavel (sem ativo, versao invalida ou manifesto ilegivel)."""
+    try:
+        ativo = instalador.obter_ativo(pid, verificar=False)
+        manifesto = json.loads((ativo.pasta / "manifest.json").read_text(encoding="utf-8"))
+        return contrato_de_manifesto(manifesto, ativo.id, ativo.versao, ativo.identidade)
+    except (ErroInstalacao, OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+
+
 class Executor:
     def __init__(self, instalador: Instalador, backends: dict[str, Backend] | None = None, *,
                  cuda_probe: Callable[[], bool] = cuda_disponivel) -> None:
@@ -205,6 +227,14 @@ class Executor:
         e = self._resolver(pid)
         return {"id": e.id, "versao": e.versao, "dispositivos": {k: m.dispositivo for k, m in e.modelos.items()},
                 "atributos": [a["nome"] for a in e.manifesto["atributos"]]}
+
+    def contrato(self, pid: str) -> dict[str, Any]:
+        """O que o host precisa saber para despachar e consumir: identidade/versao ativas, entrada e validade por atributo.
+
+        Resolve (e recarrega, se a versao ativa mudou) como `executar`; levanta `ErroExecucao` se nao houver ativo.
+        """
+        e = self._resolver(pid)
+        return contrato_de_manifesto(e.manifesto, e.id, e.versao, e.identidade)
 
     # ------------------------------------------------------------------ execucao
 

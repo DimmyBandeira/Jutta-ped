@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Configurações — Jutta Ped{% endblock %}
+{% block titulo_pagina %}Configurações{% endblock %}
 {% block content %}
-<h3 style="margin-top:0">Configurações</h3>
 <p class="aviso">Alterações aqui valem na hora — não precisa reiniciar o serviço.</p>
-{% if salvo %}<p class="badge online" style="margin-bottom:1rem">Salvo!</p>{% endif %}
+{% if salvo %}<div class="mensagem ok" role="status">Configurações salvas.</div>{% endif %}
 
 <form class="painel" method="post" action="/painel/configuracoes">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  {% if erro %}<div class="badge offline" style="display:block; margin-bottom:.6rem">{{ erro }}</div>{% endif %}
+  {% if erro %}<div class="mensagem erro" role="alert">{{ erro }}</div>{% endif %}
   <div class="cartao">
     <h4>go2rtc</h4>
     <label>API de administração (servidor → go2rtc)</label>

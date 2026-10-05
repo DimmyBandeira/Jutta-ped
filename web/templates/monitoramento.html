@@ -1,25 +1,105 @@
 {% extends "base.html" %}
 {% block title %}Monitoramento — Jutta Ped{% endblock %}
+{% block titulo_pagina %}Monitoramento{% endblock %}
 {% block main_class %}larga{% endblock %}
 {% block content %}
-{% if cameras %}
-<div class="barra-acoes" style="justify-content:space-between; align-items:center">
-  <span class="aviso" style="margin:0">{{ cameras|length }} câmera(s)</span>
-  <div style="display:flex; gap:.5rem">
-    <button class="btn" type="button" onclick="liveTodas(true)">Tocar todas</button>
-    <button class="btn" type="button" onclick="liveTodas(false)">Pausar todas</button>
+<div id="indicadores" hx-get="/painel/indicadores" hx-trigger="load, every 10s" hx-swap="innerHTML" aria-live="off">
+  <div class="indicadores" aria-busy="true">
+    <div class="indicador"><p class="rotulo-ind">Câmeras cadastradas</p><div class="valor">—</div></div>
+    <div class="indicador"><p class="rotulo-ind">Streams sincronizados</p><div class="valor">—</div></div>
+    <div class="indicador"><p class="rotulo-ind">Análise em execução</p><div class="valor">—</div></div>
+    <div class="indicador"><p class="rotulo-ind">Alertas pendentes</p><div class="valor">—</div></div>
   </div>
 </div>
-{% endif %}
-<div class="grade-cameras" id="grade-cameras">
-  {% for c in cameras %}{% include "partials/camera_card.html" %}
-  {% else %}<div class="vazio">Nenhuma câmera cadastrada. Cadastre em "Câmeras".</div>{% endfor %}
+
+<div class="dash">
+  <div class="dash-principal">
+
+    <section class="card-dash" aria-labelledby="tit-grafico">
+      <div class="cab-card">
+        <h2 id="tit-grafico">Alertas por período <span class="grafico-total" id="grafico-total"></span></h2>
+        <div class="filtros">
+          <div><label for="grafico-periodo">Período</label>
+            <select id="grafico-periodo">
+              <option value="24h">Últimas 24 horas</option>
+              <option value="7d">Últimos 7 dias</option>
+              <option value="30d">Últimos 30 dias</option>
+            </select></div>
+          <div><label for="grafico-camera">Câmera</label>
+            <select id="grafico-camera">
+              <option value="">Todas as câmeras</option>
+              {% for o in cameras_opcoes or [] %}<option value="{{ o.id }}">{{ o.nome }}</option>{% endfor %}
+            </select></div>
+        </div>
+      </div>
+      <div class="grafico" id="grafico-alertas"></div>
+      <p class="grafico-msg" id="grafico-msg" role="status" aria-live="polite">Carregando histórico…</p>
+      <details>
+        <summary>Ver os valores em tabela</summary>
+        <div class="tabela-wrap" style="margin-top:.5rem">
+          <table><caption class="so-leitor">Alertas por período</caption>
+            <thead><tr><th scope="col">Período</th><th scope="col">Alertas</th></tr></thead>
+            <tbody id="grafico-tabela"></tbody></table>
+        </div>
+      </details>
+      <noscript><p class="aviso">O gráfico precisa de JavaScript. Use o relatório de <a href="/painel/relatorio">Alertas</a>.</p></noscript>
+    </section>
+
+    <section class="card-dash" aria-labelledby="tit-cameras">
+      <div class="cab-card">
+        <h2 id="tit-cameras">Câmeras{% if cameras %} <span class="aviso" style="font-weight:400">({{ cameras|length }})</span>{% endif %}</h2>
+        {% if cameras %}
+        <div class="acoes-pagina">
+          <button class="btn" type="button" onclick="liveTodas(true)">Tocar todas</button>
+          <button class="btn" type="button" onclick="liveTodas(false)">Pausar todas</button>
+        </div>
+        {% endif %}
+      </div>
+      <div class="grade-cameras" id="grade-cameras">
+        {% for c in cameras %}{% include "partials/camera_card.html" %}
+        {% else %}<div class="vazio" style="grid-column:1/-1">Nenhuma câmera cadastrada. Cadastre em <a href="/painel/cameras">Câmeras</a>.</div>{% endfor %}
+      </div>
+    </section>
+  </div>
+
+  <div class="dash-lateral">
+    <section class="card-dash painel-eventos" aria-labelledby="tit-alertas" style="margin:0">
+      <div class="cab-card">
+        <h2 id="tit-alertas">Alertas</h2>
+        <form id="filtros-alertas" class="filtros" onsubmit="return false">
+          <div><label for="alerta-camera">Câmera</label>
+            <select id="alerta-camera" name="camera">
+              <option value="">Todas</option>
+              {% for o in cameras_opcoes or [] %}<option value="{{ o.id }}">{{ o.nome }}</option>{% endfor %}
+            </select></div>
+          <label class="opcao"><input type="checkbox" name="pendentes" value="1"> Só pendentes</label>
+        </form>
+      </div>
+      <div id="lista-eventos-recentes" hx-get="/painel/eventos/recentes" hx-include="#filtros-alertas"
+           hx-trigger="load, every 10s, alertas-mudaram from:body, change from:#filtros-alertas" hx-swap="innerHTML" aria-live="polite">
+        <div class="vazio">Carregando alertas…</div>
+      </div>
+    </section>
+
+    <section class="card-dash" aria-labelledby="tit-receitas">
+      <div class="cab-card">
+        <h2 id="tit-receitas">Receitas</h2>
+        {% if eh_admin_logado %}<a class="btn pequeno" href="/painel/receitas">Gerenciar</a>{% endif %}
+      </div>
+      <div id="receitas-resumo" hx-get="/painel/receitas-resumo" hx-trigger="load" hx-swap="innerHTML">
+        <div class="vazio">Carregando receitas…</div>
+      </div>
+    </section>
+
+    <details class="sombra-area" id="sombra-area">
+      <summary>Sombra (diagnóstico — não são alertas)</summary>
+      <p class="nota-sombra">A sombra observa e registra veredictos de receitas para conferência. Não gera alertas, popups nem envios a destinos. Fica desligada por padrão e só um administrador a liga, por câmera, em Receitas.</p>
+      <div id="sombra-feed" hx-get="/painel/sombra/feed" hx-include="#alerta-camera"
+           hx-trigger="toggle[sombraAberta()] from:#sombra-area, change[sombraAberta()] from:#alerta-camera, every 5s [sombraAberta()]" hx-swap="innerHTML" aria-live="off">
+        <div class="vazio">Abra esta área para carregar o diagnóstico.</div>
+      </div>
+    </details>
+  </div>
 </div>
-
-<section class="painel-eventos">
-  <h3>Alertas recentes</h3>
-  <div id="lista-eventos-recentes" hx-get="/painel/eventos/recentes" hx-trigger="load, every 10s, alertas-mudaram from:body" hx-swap="innerHTML"></div>
-</section>
-
 {% endblock %}
-{% block scripts %}<script src="/static/js/live.js"></script>{% endblock %}
+{% block scripts %}<script src="/static/js/live.js"></script><script src="/static/js/dashboard.js"></script>{% endblock %}

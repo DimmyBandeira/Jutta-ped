@@ -1,1 +1,35 @@
-{% if alertas %}{% include "partials/alertas_tabela.html" %}{% else %}<div class="vazio">Nenhum alerta recente.</div>{% endif %}
+{# Lista de alertas em cartoes (coluna "Alertas" do dashboard). Contexto: alertas (eventos.para_visao),
+   filtro_camera, so_pendentes. Ciencia = POST /painel/popups/{event_id}/ack, como nos popups. #}
+{% if alertas %}
+<ul class="lista-alertas">
+  {% for a in alertas %}
+  <li class="alerta-card{% if a.reconhecido_em %} reconhecido{% elif a.suprimido %} suprimido{% endif %}" id="alerta-{{ a.event_id }}">
+    <div class="alerta-cab">
+      <strong>{{ a.camera_nome }}</strong>
+      <span class="alerta-hora">{{ a.quando_fmt or (a.criado_em.strftime('%d/%m %H:%M:%S') if a.criado_em else '') }}</span>
+    </div>
+    <div class="alerta-meta">
+      <span class="badge {{ 'neutro' if a.suprimido else 'alerta' }}">{{ 'Desacompanhada' if a.estado == 'CHILD_ALONE' else 'Separada do adulto' }}</span>
+      {% if a.suprimido %}<span class="badge neutro" title="Registrado, mas não notificado (cooldown)">suprimido</span>{% endif %}
+      {% if a.confianca is not none %}<span>Confiança {{ (a.confianca * 100)|round|int }}%</span>{% endif %}
+    </div>
+    <div class="alerta-meta">
+      {% if a.reconhecido_em %}<span class="badge online">Ciência: {{ a.reconhecido_por }} · {{ a.reconhecido_em.strftime('%H:%M:%S') }}</span>
+      {% elif a.suprimido %}<span>Sem ciência necessária</span>
+      {% else %}<span class="badge aviso-amarelo">pendente</span>{% endif %}
+      {% for e in a.entregas %}<span class="badge {{ 'online' if e.sucesso else 'offline' }}" title="{{ e.detalhe }}">{{ e.destino_nome }}</span>{% endfor %}
+    </div>
+    <div class="alerta-acoes">
+      {% if a.crop_url %}<a href="{{ a.crop_url }}" target="_blank" rel="noopener">Recorte</a>{% endif %}
+      {% if a.annotated_url %}<a href="{{ a.annotated_url }}" target="_blank" rel="noopener">Imagem</a>{% endif %}
+      {% if not a.reconhecido_em and not a.suprimido %}
+      <button class="btn pequeno primary" type="button" hx-post="/painel/popups/{{ a.event_id }}/ack" hx-swap="none"
+              hx-on::after-request="if (event.detail.successful) htmx.trigger(document.body, 'alertas-mudaram')">Ciente</button>
+      {% endif %}
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="vazio">{% if so_pendentes %}Nenhum alerta pendente{% else %}Nenhum alerta recente{% endif %}{% if filtro_camera %} para a câmera selecionada{% endif %}.</div>
+{% endif %}

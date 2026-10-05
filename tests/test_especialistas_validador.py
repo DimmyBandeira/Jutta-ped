@@ -80,13 +80,13 @@ def codigos(rel) -> set[str]:
 
 def manifesto_ov(**mudancas) -> dict:
     m = manifesto(**mudancas)
-    ov = {"bebe_ov/modelo.xml": XML, "bebe_ov/modelo.bin": BIN, "bebe_ov/metadata.yaml": METADATA}
-    m["modelos"] = [{"id": "principal", "arquivo": "modelos/bebe_ov", "formato": "openvino",
+    ov = {"bebe_openvino_model/modelo.xml": XML, "bebe_openvino_model/modelo.bin": BIN, "bebe_openvino_model/metadata.yaml": METADATA}
+    m["modelos"] = [{"id": "principal", "arquivo": "modelos/bebe_openvino_model", "formato": "openvino",
                      "sha256": hash_ov({k.split("/", 1)[1]: v for k, v in ov.items()}), "dispositivos": ["intel_gpu", "cpu"]}]
     return m
 
 
-EXTRAS_OV = {"modelos/bebe_ov/modelo.xml": XML, "modelos/bebe_ov/modelo.bin": BIN, "modelos/bebe_ov/metadata.yaml": METADATA}
+EXTRAS_OV = {"modelos/bebe_openvino_model/modelo.xml": XML, "modelos/bebe_openvino_model/modelo.bin": BIN, "modelos/bebe_openvino_model/metadata.yaml": METADATA}
 
 
 # --- pacotes validos ---------------------------------------------------------------------------------------

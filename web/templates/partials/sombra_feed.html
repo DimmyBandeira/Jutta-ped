@@ -1,0 +1,66 @@
+{# Feed de diagnostico da sombra. NAO sao alertas. Contexto: sombra = {eventos:[...], cameras:[{id, nome, estado, erro, enfileirados, descartados, processados}]} #}
+{% if sombra and sombra.cameras %}
+<div class="aviso" style="margin:0 0 .6rem">
+  {% for sc in sombra.cameras %}
+  <div>{{ sc.nome }}: <span class="badge {{ 'offline' if sc.estado == 'erro' else ('sombra' if sc.estado == 'ativa' else 'neutro') }}">{{ sc.estado }}</span>
+    enfileirados {{ sc.enfileirados }} · descartados {{ sc.descartados }} · processados {{ sc.processados }}{% if sc.erro %} · erro: {{ sc.erro }}{% endif %}</div>
+  {% endfor %}
+</div>
+{% endif %}
+{% if sombra and sombra.eventos %}
+<div class="sombra-lista" tabindex="0" role="region" aria-label="Eventos de sombra recentes">
+{% for ev in sombra.eventos %}
+<div class="sombra-evento">
+  {% if ev.tipo == 'cena' %}
+  <div><strong>{{ ev.camera_nome }}</strong> · cena (quadro {{ ev.quadro_id }}) · {{ ev.quando }} · {{ ev.sujeitos|length }} sujeito(s)</div>
+  <div>Estado do evento: <span class="badge sombra">{{ ev.veredito }}</span>
+    {% if ev.receita %} · receita <span class="hash">{{ ev.receita }}</span>{% endif %}
+    {% if ev.config_hash %} · config <span class="hash">{{ ev.config_hash[:10] }}</span>{% endif %}</div>
+  {% if ev.eventos_regra %}
+  <ul class="cond">
+    {% for e in ev.eventos_regra %}
+    <li class="cond-txt">{{ e.id }} · trilha {{ e.trilha_id }}: <strong>{{ e.estado }}</strong>
+      {% if e.positivo_s is not none %} · evidência positiva {{ e.positivo_s }} s{% endif %}
+      {% if e.idade_ultima_evidencia_s is not none %} · última evidência há {{ e.idade_ultima_evidencia_s }} s{% endif %}
+      {% if e.sustentacao_perdida %} · <span class="badge aviso-amarelo">sustentação perdida</span>{% endif %}
+      {% if e.transicao %} · <span class="badge neutro">{{ e.transicao }}{% if e.motivo %}: {{ e.motivo }}{% endif %}</span>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if ev.sujeitos %}
+  <ul class="cond">
+    {% for s in ev.sujeitos %}<li class="cond-txt">trilha {{ s.trilha_id }} ({{ s.classe }}): papéis {% for k, v in s.papeis.items() %}{{ k }}={{ v }}{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}
+      {% if s.relacoes %} · relações {% for k, v in s.relacoes.items() %}{{ k }}={{ v }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% else %}
+  <div><strong>{{ ev.camera_nome }}</strong> · trilha {{ ev.trilha_id }} · quadro {{ ev.quadro_id }} · {{ ev.quando }}</div>
+  <div>Veredito: <span class="badge sombra">{{ ev.veredito }}</span>
+    {% if ev.receita %} · receita <span class="hash">{{ ev.receita }}</span>{% endif %}
+    {% if ev.config_hash %} · config <span class="hash">{{ ev.config_hash[:10] }}</span>{% endif %}
+    {% if ev.idade_max_ms is not none %} · idade máx. {{ ev.idade_max_ms }} ms{% endif %}</div>
+  {% endif %}
+  {% if ev.versoes %}<div class="aviso">Versões: {% for v in ev.versoes %}{{ v.id }} {{ v.versao }}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+  {% if ev.condicoes %}
+  <ul class="cond">
+    {% for c in ev.condicoes %}
+    <li class="cond-txt">{{ c.especialista }}.{{ c.atributo }} = {{ c.igual }} →
+      <strong>{% if c.resultado is sameas true %}sim{% elif c.resultado is sameas false %}não{% else %}{{ c.resultado if c.resultado is not none else 'indeterminado' }}{% endif %}</strong>
+      {% if c.motivo %}({{ c.motivo }}){% endif %}
+      {% if c.idade_ms is not none %} · idade {{ c.idade_ms }} ms{% endif %}
+      {% if c.reutilizado %} · <span class="badge neutro">reutilizado</span>{% endif %}
+      {% if c.falha_recente %} · <span class="badge offline">falha recente</span>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if ev.incompatibilidades %}
+  <ul class="cond">
+    {% for pid, motivos in ev.incompatibilidades.items() %}{% for m in motivos %}<li class="cond-txt"><span class="badge aviso-amarelo">incompatível</span> {{ pid }}: {{ m }}</li>{% endfor %}{% endfor %}
+  </ul>
+  {% endif %}
+</div>
+{% endfor %}
+</div>
+{% else %}
+<div class="vazio">Nenhum evento de sombra registrado ainda. A sombra fica desligada até um administrador ligá-la por câmera em Receitas.</div>
+{% endif %}

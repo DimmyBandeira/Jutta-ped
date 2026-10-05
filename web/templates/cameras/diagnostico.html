@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Diagnóstico do mestre — {{ cam.nome }} — Jutta Ped{% endblock %}
+{% block titulo_pagina %}Diagnóstico do mestre: {{ cam.nome }}{% endblock %}
+{% block acoes_pagina %}
+<a class="btn" href="/painel/cameras/{{ cam.id }}/analise">Configuração de análise</a>
+<a class="btn" href="/painel/cameras">Câmeras</a>
+{% endblock %}
+{% block content %}
+{% if flash %}<div class="mensagem {{ 'ok' if (flash.tipo if flash is mapping else 'ok') == 'ok' else 'erro' }}" role="status">{{ flash.texto if flash is mapping else flash }}</div>{% endif %}
+<div class="mensagem aviso" role="note">
+  Mostra só o que o <strong>mestre</strong> (detecção e rastreamento de pessoas) produz: caixas, trilhas e <strong>recortes</strong> com a configuração efetiva. <strong>Não</strong> usa especialista, receita nem classificação criança/adulto, e não gera veredito. As imagens ficam <strong>só na memória</strong> do servidor (nunca em disco) e somem ao desligar.
+</div>
+
+<div class="barra-acoes" style="justify-content:space-between; align-items:center">
+  <span>Estado: <span class="badge {{ 'online' if diag and diag.estado == 'ativo' else ('aviso-amarelo' if diag and diag.estado == 'aguardando' else 'neutro') }}">{{ diag.estado if diag else 'desligado' }}</span>
+    {% if efetivo %}<span class="aviso">config v{{ efetivo.versao }} · <code>{{ (efetivo.config_hash or '')[:10] }}</code></span>{% endif %}</span>
+  <form method="post" action="/painel/cameras/{{ cam.id }}/diagnostico" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if diag and diag.estado != 'desligado' %}
+    <input type="hidden" name="acao" value="desligar"><button class="btn" type="submit">Desligar diagnóstico</button>
+    {% else %}
+    <input type="hidden" name="acao" value="ligar"><button class="btn primary" type="submit">Ligar diagnóstico</button>
+    {% endif %}
+  </form>
+</div>
+
+{% if diag and diag.estado != 'desligado' %}
+<section class="secao" aria-labelledby="tit-quadro">
+  <h4 id="tit-quadro">Último quadro analisado</h4>
+  <div class="diag-quadro">
+    <p id="diag-sem-quadro" class="aviso"{% if diag.quadro_id is not none and diag.quadro_id is defined %} hidden{% endif %}>Aguardando o primeiro quadro do mestre…</p>
+    <img id="diag-quadro"{% if diag.quadro_id is not none and diag.quadro_id is defined %} src="/painel/cameras/{{ cam.id }}/diagnostico/quadro.jpg"{% else %} hidden{% endif %} alt="Último quadro com as caixas do mestre e a região de análise (imagem de teste/ao vivo, só em memória)" data-src="/painel/cameras/{{ cam.id }}/diagnostico/quadro.jpg">
+    <p class="aviso">Caixa verde: pessoa dentro da região de análise · laranja: fora (permanece na Cena, sem recorte) · retângulo azul-claro: a ROI. Uma pessoa visível sem caixa significa que o <strong>mestre não a detectou</strong> naquele quadro (cena possivelmente vazia).</p>
+  </div>
+</section>
+<div id="diag-resumo" hx-get="/painel/cameras/{{ cam.id }}/diagnostico/resumo" hx-trigger="load, every 2s" hx-swap="innerHTML">
+  {% include "partials/diagnostico_mestre.html" %}
+</div>
+{% else %}
+<div class="vazio">Diagnóstico desligado. Ligue-o para ver as caixas, trilhas e recortes do mestre desta câmera (a análise de IA da câmera precisa estar ligada).</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="/static/js/diagnostico.js"></script>{% endblock %}

@@ -6,17 +6,17 @@
 <title>Entrar — Jutta Ped</title>
 <link rel="stylesheet" href="/static/css/app.css">
 </head>
-<body>
-<main style="max-width:380px; margin-top:12vh">
-  <h2 style="text-align:center">Jutta Ped</h2>
-  <p class="aviso" style="text-align:center">Monitoramento pediátrico</p>
+<body class="sem-lateral">
+<main id="conteudo">
+  <h1 style="text-align:center; font-size:1.6rem; margin-bottom:.2rem">Jutta Ped</h1>
+  <p class="aviso" style="text-align:center; margin-top:0">Monitoramento pediátrico</p>
   <form class="painel" method="post" action="/login">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    {% if erro %}<div class="badge offline" style="display:block; margin-bottom:.6rem">{{ erro }}</div>{% endif %}
-    <label>Usuário</label>
-    <input name="login" required autofocus autocapitalize="off" autocorrect="off">
-    <label>Senha</label>
-    <input name="senha" type="password" required>
+    {% if erro %}<div class="mensagem erro" role="alert">{{ erro }}</div>{% endif %}
+    <label for="l-login">Usuário</label>
+    <input id="l-login" name="login" required autofocus autocapitalize="off" autocorrect="off">
+    <label for="l-senha">Senha</label>
+    <input id="l-senha" name="senha" type="password" required>
     <div class="rodape-form"><button class="btn primary" type="submit" style="width:100%">Entrar</button></div>
   </form>
 </main>

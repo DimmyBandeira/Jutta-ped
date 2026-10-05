@@ -1,26 +1,26 @@
 {% extends "base.html" %}
 {% block title %}Especialistas — Jutta Ped{% endblock %}
+{% block titulo_pagina %}Especialistas{% endblock %}
 {% block content %}
-<h3 style="margin-top:0">Especialistas</h3>
-<p class="aviso">Pacotes declarativos (manifesto + pesos) que fornecem atributos ao motor de análise. A validação aqui é
+<p class="subtitulo">Pacotes declarativos (manifesto + pesos) que fornecem atributos ao motor de análise. A validação aqui é
 <strong>estática</strong>: confere estrutura, arquivos e hashes; <strong>não</strong> carrega nem aprova o modelo para execução.
 Ativar uma versão a torna a vigente no registro; o motor de análise ainda não a consome.</p>
 
-{% if flash %}<div class="badge {{ 'online' if flash.tipo == 'ok' else 'offline' }}" style="display:block; margin-bottom:1rem">{{ flash.texto }}</div>{% endif %}
+{% if flash %}<div class="mensagem {{ 'ok' if flash.tipo == 'ok' else 'erro' }}" role="status">{{ flash.texto }}</div>{% endif %}
 {% if registro_erro %}
-<div class="badge offline" style="display:block; margin-bottom:1rem">{{ registro_erro }}</div>
+<div class="mensagem erro" role="alert">{{ registro_erro }}</div>
 {% endif %}
 {% if erro %}
-<div class="badge offline" style="display:block; margin-bottom:.6rem">{{ erro }}</div>
+<div class="mensagem erro" role="alert">{{ erro }}</div>
 {% if problemas %}
-<table style="margin-bottom:1rem">
+<div class="tabela-wrap" style="margin-bottom:1rem"><table>
   <thead><tr><th>Categoria</th><th>Código</th><th>Onde</th><th>Detalhe</th></tr></thead>
   <tbody>
   {% for p in problemas %}
     <tr><td>{{ p.categoria }}</td><td>{{ p.codigo }}</td><td>{{ p.caminho or '—' }}</td><td>{{ p.mensagem }}</td></tr>
   {% endfor %}
   </tbody>
-</table>
+</table></div>
 {% endif %}
 {% endif %}
 
@@ -37,11 +37,11 @@ Ativar uma versão a torna a vigente no registro; o motor de análise ainda não
 
 {% for e in itens %}
 <div class="secao">
-  <h4 style="text-transform:none; font-size:1rem; color:var(--text); margin:0 0 .3rem">{{ e.nome }} <span class="aviso" style="margin:0">{{ e.id }}</span></h4>
+  <h4 style="text-transform:none; font-size:1rem; color:var(--ink); margin:0 0 .3rem; letter-spacing:0">{{ e.nome }} <span class="aviso" style="margin:0">{{ e.id }}</span></h4>
   <p class="aviso" style="margin:.2rem 0 .6rem">Versão ativa:
     {% if e.ativa %}<span class="badge online">{{ e.ativa }}</span>{% else %}<span class="badge neutro">nenhuma</span>{% endif %}
   </p>
-  <table class="tab-versoes">
+  <div class="tabela-wrap"><table class="tab-versoes">
     <thead><tr><th>Versão</th><th>Estado</th><th>Instalada em</th><th>Origem</th><th></th></tr></thead>
     <tbody>
     {% for v in e.versoes %}
@@ -64,7 +64,7 @@ Ativar uma versão a torna a vigente no registro; o motor de análise ainda não
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% if e.tem_anterior %}
   <form method="post" action="/painel/especialistas/{{ e.id }}/reverter" style="margin-top:.6rem"
         onsubmit="return confirm('Voltar {{ e.id }} para a versão anterior válida?')">
@@ -85,14 +85,14 @@ Ativar uma versão a torna a vigente no registro; o motor de análise ainda não
 <div class="secao">
   <h4>Operações recentes</h4>
   {% if operacoes %}
-  <table>
+  <div class="tabela-wrap"><table>
     <thead><tr><th>Quando</th><th>Operação</th><th>Detalhe</th></tr></thead>
     <tbody>
     {% for o in operacoes %}
       <tr><td>{{ o.ts }}</td><td>{{ o.op }}</td><td>{{ o.id or '' }}{% if o.versao %} {{ o.versao }}{% endif %}{% if o.slug %} · {{ o.slug }}{% endif %}{% if o.acao %}{{ o.acao }}{% endif %}{% if o.codigo is defined %}código de validação {{ o.codigo }}{% endif %}{% if o.erro %}{{ o.erro }}{% endif %}</td></tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}<p class="aviso">Sem operações registradas.</p>{% endif %}
 </div>
 {% endblock %}

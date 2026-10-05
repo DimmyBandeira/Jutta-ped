@@ -104,6 +104,7 @@ passar despercebido); extensões usam o objeto `x` (livre, ignorado pelo host).
 * `formato`: `pt` \| `openvino` \| `onnx`. `pt` e `onnx` apontam um arquivo; `openvino` aponta a **pasta**
   do modelo (exatamente um `.xml` e um `.bin` com o mesmo nome-base, mais `metadata.yaml` opcional) e
   `sha256` usa o hash canônico de pasta `jutta-dir-v1` (seção 12.1).
+  **A pasta deve se chamar `*_openvino_model`** (convenção do Ultralytics; com outro nome o modelo não carrega — achado da fumaça real do pacote de papel; o validador recusa com `openvino_nome`).
 * `sha256` é OBRIGATÓRIO e identifica os **pesos**. Pesos diferentes = hash diferente, mesmo com
   `pacote.versao` igual; por isso o host e os nós comparam o hash, não só a versão.
 * `dispositivos`: preferências em ordem. `cpu` DEVE estar presente (reserva universal).
@@ -606,3 +607,12 @@ silêncio. Recusa = `E_MODELO_INDISPONIVEL` com "formato de entrada nao suportad
 | tarefas | só `detect` e `classify` (segmentação, pose e obb: recusadas) |
 
 A imagem chega ao Ultralytics já no tamanho declarado; no `.pt` ele só a completa até múltiplo do stride.
+
+## 15. Uso pelo motor em sombra (implementado)
+
+`Executor.contrato(id)` expõe ao host versão, identidade, `entrada`, validade por atributo e faixas de parâmetros do especialista ativo.
+O motor mínimo ([etapa 03](etapas_motor/03_motor_minimo.md)) usa isso para: recortar só a `classe_mestre` declarada, recusar na configuração
+alvos/fontes que não despacha, calcular o orçamento desde a captura, expirar cada atributo por `validade_ms` (a receita só pode apertar) e
+tratar ausência, erro, atraso ou `indeterminado` como indeterminado. Um pacote compatível entra por manifesto + receita, sem editar o host.
+
+**Atributos como entrada da mãe (03b).** Um especialista de papel não decide papel nem companhia: expõe, por exemplo, `numero` `confianca_<classe>` (`maior_confianca` de uma classe de detecção) e a **receita contrato 2** decide (`minimo`, `maior_que` entre dois atributos). O pacote `br.jutta.papel-pessoa` (`tools/pacote_papel.py`) empacota o detector criança/adulto atual sem retreino. Modelo OpenVINO com batch fixo: o backend fatia o lote pelo `batch` exportado e o manifesto deve declarar `lote_max: 1`.

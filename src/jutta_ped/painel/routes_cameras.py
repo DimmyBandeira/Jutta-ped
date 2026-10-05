@@ -11,7 +11,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.jutta_ped.painel.config_service import ler_config
-from src.jutta_ped.painel.deps import DbDep, erro_no_form, registrar_auditoria, render, usuario_atual, verifica_csrf
+from src.jutta_ped.painel.deps import DbDep, erro_no_form, registrar_auditoria, render, usuario_atual, verifica_csrf, exige_admin
+from src.jutta_ped.painel.simulater_dsa import ler_cenario
 from src.jutta_ped.painel.go2rtc import mascarar_url
 from src.jutta_ped.painel.models import Camera, CameraDestino, Destino, Fabricante, StreamTipo, Usuario
 
@@ -102,6 +103,42 @@ async def streams_do_yaml(arquivo_yaml: UploadFile = File(...), usuario: Usuario
         return HTMLResponse('<option value="" disabled>(nenhum stream encontrado no arquivo)</option>')
     opcoes += [f'<option value="{escape(n)}">{escape(n)}</option>' for n in nomes]
     return HTMLResponse("".join(opcoes))
+
+
+@router.get("/simulater-dsa")
+def form_simulater(request: Request, usuario: Usuario = Depends(exige_admin)):
+    return render(request, "cameras/_simulater_dsa.html", usuario)
+
+
+@router.post("/simulater-dsa")
+async def importar_simulater(request: Request, arquivo_yaml: UploadFile = File(...),
+                            host: str = Form("127.0.0.1"),
+                            usuario: Usuario = Depends(exige_admin), db: Session = DbDep):
+    try:
+        fontes = ler_cenario(await arquivo_yaml.read(_MAX_YAML_BYTES + 1), host)
+        existentes = {c.nome.lower(): c for c in _cameras(db)}
+        novas, repetidas = [], 0
+        for nome, url in fontes:
+            anterior = existentes.get(nome.lower())
+            if anterior is not None:
+                if anterior.fabricante != Fabricante.rtsp_generico or not anterior.rtsp_url_enc or _cifra(request).decifrar(anterior.rtsp_url_enc) != url:
+                    raise ValueError(f"Já existe uma câmera diferente com o nome {nome}. Nenhuma foi importada.")
+                repetidas += 1
+                continue
+            novas.append(Camera(nome=nome, fabricante=Fabricante.rtsp_generico,
+                                rtsp_url_enc=_cifra(request).cifrar(url), ia_pediatria=False))
+    except ValueError as exc:
+        db.rollback()
+        return erro_no_form(str(exc))
+    db.add_all(novas)
+    registrar_auditoria(db, usuario.login, "simulater_dsa_importado", f"novas={len(novas)}; existentes={repetidas}")
+    db.commit()
+    servicos = _servicos(request)
+    servicos.sync.reconcile()
+    servicos.acordar()
+    lista = _lista_oob(request, db, usuario)
+    mensagem = f"SimulaterDSA: {len(novas)} câmeras cadastradas; {repetidas} já existentes. IA desligada. Confira o estado de sincronização abaixo."
+    return HTMLResponse(f'<p role="status">{mensagem}</p>' + lista.body.decode("utf-8"))
 
 
 @router.get("/{camera_id}/editar")
@@ -205,7 +242,7 @@ def _depois_de_gravar(request: Request, db: Session, camera_id: int) -> None:
     servicos.sync.reconcile()
     if servicos.ia is not None:
         servicos.ia.reiniciar(camera_id)
-        servicos.acordar()
+    servicos.acordar()          # depois do commit: invalida snapshots antigos da sombra mesmo sem IA
 
 
 @router.post("")

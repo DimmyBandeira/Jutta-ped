@@ -1,0 +1,263 @@
+[
+  {
+    "versao_avaliador": 2,
+    "video": "DVR-1-Ch.7-8 5-- PAV-Hall-ELEV SERVI.dav",
+    "alertas_emitidos": 3,
+    "alertas_suprimidos": 3,
+    "trilhas_distintas_nos_alertas": [
+      2,
+      4,
+      20
+    ],
+    "cobertura": {
+      "erro": null,
+      "integral": true,
+      "motivo_parada": "eof",
+      "motivos_nao_integral": [],
+      "quadros_analisados": 480,
+      "quadros_do_arquivo": 480,
+      "razao": 1.0,
+      "status_final": "finished",
+      "terminou_por_eof": true,
+      "timeout": false
+    },
+    "anotacao": {
+      "estado": "proposta_ia",
+      "oficial": false,
+      "pendencias": [
+        "origem da anotacao e IA (proposta): so revisao humana gera metricas oficiais",
+        "anotacao nao confirmada (status=proposta_nao_confirmada, revisado=false)",
+        "sem revisao_completa_do_video: alertas fora dos episodios nao podem ser chamados de falsos",
+        "procedencia do arquivo de video nao confirmada (fonte, tipo real|sintetico e confirmado_por)"
+      ],
+      "avisos": [
+        "revisao nao cega: o revisor pode ter consultado os alertas do sistema (vies de confirmacao)"
+      ],
+      "erros": [],
+      "origem_revisao": "ia",
+      "revisor_declarado": "Codex (IA)",
+      "data_declarada": "2026-10-04",
+      "revisao_cega": false,
+      "procedencia": {
+        "confirmada": false,
+        "fonte": "",
+        "tipo": "",
+        "confirmado_por": ""
+      }
+    },
+    "oficial": false,
+    "aviso": "LEITURA PROVISORIA a partir de uma anotacao NAO confirmada: nao sao metricas de qualidade e nao devem ser citadas como tal. Depende de confirmacao humana, procedencia do video e criterio de inicio dos episodios.",
+    "tolerancia_s": 2.0,
+    "motivo": null,
+    "ressalva": null,
+    "leitura": {
+      "_oficial": false,
+      "_aviso": "LEITURA PROVISORIA a partir de uma anotacao NAO confirmada: nao sao metricas de qualidade e nao devem ser citadas como tal. Depende de confirmacao humana, procedencia do video e criterio de inicio dos episodios.",
+      "_negativo_declarado": false,
+      "episodios_positivos": 1,
+      "detectados": 1,
+      "detectados_sem_ambiguidade": 1,
+      "perdidos": [],
+      "alertas_fora_dos_episodios_propostos": [],
+      "n_alertas_fora_dos_episodios_propostos": 0,
+      "alertas_repetidos": 2,
+      "trilhas_adicionais": 2,
+      "transicoes_de_trilha": 2,
+      "alertas_ambiguos": [],
+      "associacoes_manuais_fora_da_janela": [],
+      "episodios_sobrepostos": [],
+      "duracao_do_video_s": 32.0,
+      "por_episodio": [
+        {
+          "id": "dvr1-e1",
+          "criterio_inicio": "Primeira amostra em que o adulto anteriormente proximo saiu completamente do campo, enquanto a crianca continua visivel. Marco operacional desta referencia: 9,2 s; nao e o inicio do afastamento nem limite de seguranca.",
+          "detectado": true,
+          "detectado_sem_ambiguidade": true,
+          "alertas": 3,
+          "atraso_s": 6.467,
+          "repetidos": 2,
+          "trilhas": [
+            2,
+            4,
+            20
+          ],
+          "trilhas_adicionais": 2,
+          "transicoes_de_trilha": 2
+        }
+      ]
+    }
+  },
+  {
+    "versao_avaliador": 2,
+    "video": "DVR-3-Ch.0-1 ACESSO-BLINDEX.avi",
+    "alertas_emitidos": 2,
+    "alertas_suprimidos": 2,
+    "trilhas_distintas_nos_alertas": [
+      1,
+      18
+    ],
+    "cobertura": {
+      "erro": null,
+      "integral": true,
+      "motivo_parada": "eof",
+      "motivos_nao_integral": [],
+      "quadros_analisados": 441,
+      "quadros_do_arquivo": 441,
+      "razao": 1.0,
+      "status_final": "finished",
+      "terminou_por_eof": true,
+      "timeout": false
+    },
+    "anotacao": {
+      "estado": "proposta_ia",
+      "oficial": false,
+      "pendencias": [
+        "origem da anotacao e IA (proposta): so revisao humana gera metricas oficiais",
+        "anotacao nao confirmada (status=proposta_nao_confirmada, revisado=false)",
+        "sem revisao_completa_do_video: alertas fora dos episodios nao podem ser chamados de falsos",
+        "procedencia do arquivo de video nao confirmada (fonte, tipo real|sintetico e confirmado_por)"
+      ],
+      "avisos": [
+        "revisao nao cega: o revisor pode ter consultado os alertas do sistema (vies de confirmacao)"
+      ],
+      "erros": [],
+      "origem_revisao": "ia",
+      "revisor_declarado": "Codex (IA)",
+      "data_declarada": "2026-10-04",
+      "revisao_cega": false,
+      "procedencia": {
+        "confirmada": false,
+        "fonte": "",
+        "tipo": "",
+        "confirmado_por": ""
+      }
+    },
+    "oficial": false,
+    "aviso": "LEITURA PROVISORIA a partir de uma anotacao NAO confirmada: nao sao metricas de qualidade e nao devem ser citadas como tal. Depende de confirmacao humana, procedencia do video e criterio de inicio dos episodios.",
+    "tolerancia_s": 2.0,
+    "motivo": null,
+    "ressalva": null,
+    "leitura": {
+      "_oficial": false,
+      "_aviso": "LEITURA PROVISORIA a partir de uma anotacao NAO confirmada: nao sao metricas de qualidade e nao devem ser citadas como tal. Depende de confirmacao humana, procedencia do video e criterio de inicio dos episodios.",
+      "_negativo_declarado": false,
+      "episodios_positivos": 2,
+      "detectados": 1,
+      "detectados_sem_ambiguidade": 1,
+      "perdidos": [
+        "dvr3-e2"
+      ],
+      "alertas_fora_dos_episodios_propostos": [],
+      "n_alertas_fora_dos_episodios_propostos": 0,
+      "alertas_repetidos": 1,
+      "trilhas_adicionais": 1,
+      "transicoes_de_trilha": 1,
+      "alertas_ambiguos": [],
+      "associacoes_manuais_fora_da_janela": [],
+      "episodios_sobrepostos": [
+        [
+          "dvr3-e1",
+          "dvr3-e2"
+        ]
+      ],
+      "duracao_do_video_s": 14.7,
+      "por_episodio": [
+        {
+          "id": "dvr3-e1",
+          "criterio_inicio": "Primeira aparicao identificavel da primeira crianca junto as cadeiras a direita, sem adulto proximo acompanhando nas imagens revisadas. Marco amostrado: 2,4 s.",
+          "detectado": true,
+          "detectado_sem_ambiguidade": true,
+          "alertas": 2,
+          "atraso_s": 3.933,
+          "repetidos": 1,
+          "trilhas": [
+            1,
+            18
+          ],
+          "trilhas_adicionais": 1,
+          "transicoes_de_trilha": 1
+        },
+        {
+          "id": "dvr3-e2",
+          "criterio_inicio": "Primeira aparicao identificavel da segunda crianca junto as cadeiras a direita, sem adulto proximo acompanhando nas imagens revisadas. Marco amostrado: 10,4 s; sujeito distinto da primeira passagem.",
+          "detectado": false,
+          "detectado_sem_ambiguidade": false,
+          "alertas": 0,
+          "atraso_s": null,
+          "repetidos": 0,
+          "trilhas": [],
+          "trilhas_adicionais": 0,
+          "transicoes_de_trilha": 0
+        }
+      ]
+    }
+  },
+  {
+    "versao_avaliador": 2,
+    "video": "stream-normal.mp4",
+    "alertas_emitidos": 0,
+    "alertas_suprimidos": 0,
+    "trilhas_distintas_nos_alertas": [],
+    "cobertura": {
+      "erro": null,
+      "integral": true,
+      "motivo_parada": "eof",
+      "motivos_nao_integral": [],
+      "quadros_analisados": 395,
+      "quadros_do_arquivo": 395,
+      "razao": 1.0,
+      "status_final": "finished",
+      "terminou_por_eof": true,
+      "timeout": false
+    },
+    "anotacao": {
+      "estado": "proposta_ia",
+      "oficial": false,
+      "pendencias": [
+        "origem da anotacao e IA (proposta): so revisao humana gera metricas oficiais",
+        "anotacao nao confirmada (status=proposta_nao_confirmada, revisado=false)",
+        "sem revisao_completa_do_video: alertas fora dos episodios nao podem ser chamados de falsos",
+        "procedencia do arquivo de video nao confirmada (fonte, tipo real|sintetico e confirmado_por)"
+      ],
+      "avisos": [
+        "revisao nao cega: o revisor pode ter consultado os alertas do sistema (vies de confirmacao)"
+      ],
+      "erros": [],
+      "origem_revisao": "ia",
+      "revisor_declarado": "Codex (IA)",
+      "data_declarada": "2026-10-04",
+      "revisao_cega": false,
+      "procedencia": {
+        "confirmada": false,
+        "fonte": "",
+        "tipo": "",
+        "confirmado_por": ""
+      }
+    },
+    "oficial": false,
+    "aviso": "LEITURA PROVISORIA a partir de uma anotacao NAO confirmada: nao sao metricas de qualidade e nao devem ser citadas como tal. Depende de confirmacao humana, procedencia do video e criterio de inicio dos episodios.",
+    "tolerancia_s": 2.0,
+    "motivo": null,
+    "ressalva": null,
+    "leitura": {
+      "_oficial": false,
+      "_aviso": "LEITURA PROVISORIA a partir de uma anotacao NAO confirmada: nao sao metricas de qualidade e nao devem ser citadas como tal. Depende de confirmacao humana, procedencia do video e criterio de inicio dos episodios.",
+      "_negativo_declarado": false,
+      "episodios_positivos": 0,
+      "detectados": 0,
+      "detectados_sem_ambiguidade": 0,
+      "perdidos": [],
+      "alertas_fora_dos_episodios_propostos": [],
+      "n_alertas_fora_dos_episodios_propostos": 0,
+      "alertas_repetidos": 0,
+      "trilhas_adicionais": 0,
+      "transicoes_de_trilha": 0,
+      "alertas_ambiguos": [],
+      "associacoes_manuais_fora_da_janela": [],
+      "episodios_sobrepostos": [],
+      "duracao_do_video_s": 13.17,
+      "por_episodio": [],
+      "aviso_negativo_curto": "negativo de 13 s: teste de sanidade, NAO estima falsos alertas por hora (menos de 600 s de video)"
+    }
+  }
+]

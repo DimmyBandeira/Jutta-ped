@@ -73,7 +73,7 @@ def test_fluxo_completo_no_navegador(pagina, painel_servidor, tmp_path: Path) ->
     pg, base = pagina, painel_servidor.url
     pg.click("nav >> text=Especialistas")
     pg.wait_for_url("**/painel/especialistas")
-    assert pg.locator("h3", has_text="Especialistas").is_visible()
+    assert pg.locator("h1, h2, h3", has_text="Especialistas").is_visible()
     assert pg.locator("text=Nenhum especialista instalado").is_visible()
     assert pg.locator("text=Validar e instalar").is_visible()
     assert _sem_rolagem_horizontal(pg)

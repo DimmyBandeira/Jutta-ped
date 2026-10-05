@@ -1,11 +1,11 @@
 <div id="lista-destinos" hx-swap-oob="{{ 'true' if oob else 'false' }}">
 {% if destinos %}
-<table>
+<div class="tabela-wrap"><table>
   <thead><tr><th>Nome</th><th>Tipo</th><th>Configuração</th><th>Estado</th><th></th></tr></thead>
   <tbody>
     {% for d in destinos %}{% include "destinos/_row.html" %}{% endfor %}
   </tbody>
-</table>
+</table></div>
 {% else %}
 <div class="vazio">Nenhum destino cadastrado ainda.</div>
 {% endif %}

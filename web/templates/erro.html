@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title %}{{ titulo }} — Jutta Ped{% endblock %}
+{% block titulo_pagina %}{{ titulo }}{% endblock %}
 {% block content %}
 <div class="vazio">
-  <h3>{{ titulo }}</h3>
   <p>{{ mensagem }}</p>
   <a class="btn" href="/painel/monitoramento">Voltar ao início</a>
 </div>

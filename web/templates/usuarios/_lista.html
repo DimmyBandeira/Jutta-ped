@@ -1,11 +1,11 @@
 <div id="lista-usuarios" hx-swap-oob="{{ 'true' if oob else 'false' }}">
 {% if usuarios %}
-<table>
+<div class="tabela-wrap"><table>
   <thead><tr><th>Usuário</th><th>Papel</th><th>Status</th><th></th></tr></thead>
   <tbody>
     {% for u in usuarios %}{% include "usuarios/_row.html" %}{% endfor %}
   </tbody>
-</table>
+</table></div>
 {% else %}
 <div class="vazio">Nenhum usuário cadastrado ainda.</div>
 {% endif %}
