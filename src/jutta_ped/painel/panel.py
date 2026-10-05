@@ -106,6 +106,8 @@ def montar_servicos(
     processo = Go2rtcProcesso(
         runtime_dir=runtime_dir,
         configurado_exe=lambda: config_loader()["go2rtc_exe"],
+        configurado_rtsp=lambda: config_loader()["go2rtc_rtsp_url"],
+        configurado_api=lambda: config_loader()["go2rtc_api_url"],
         client_factory=client_factory,
         **processo_kwargs,
     )

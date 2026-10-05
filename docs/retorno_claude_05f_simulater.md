@@ -1,5 +1,10 @@
 # Retomada do Claude — 05f e SimulaterDSA
 
+**Superado quanto à pendência do go2rtc:** em 05/10/2026 a frente foi executada
+e fechada pelo Codex. Para retomar em outro chat, leia primeiro
+[`fechamento_integracao_go2rtc.md`](fechamento_integracao_go2rtc.md).
+Os próximos passos abaixo preservam o planejamento anterior, não uma ordem para refazer o trabalho.
+
 ## Ponto de partida
 
 Continue na branch `feature/motor-plugins-nos`, a partir do commit de checkpoint

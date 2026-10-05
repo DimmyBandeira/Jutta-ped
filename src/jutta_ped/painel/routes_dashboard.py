@@ -138,7 +138,8 @@ def processamento(db: Session, servicos, inst: Any) -> dict[str, Any]:
     return {
         "servico": {"iniciado_em": servicos.iniciado_em.strftime("%d/%m/%Y %H:%M:%S"), "ia_disponivel": servicos.ia is not None,
                     "max_cameras_ia": cfg["max_cameras_ia"]},
-        "go2rtc": {"api_ok": api_ok, "streams": streams, "sincronizadas": sum(1 for c in cameras if c.go2rtc_sync == "ok")},
+        "go2rtc": {"api_ok": api_ok, "streams": streams, "sincronizadas": sum(1 for c in cameras if c.go2rtc_sync == "ok"),
+                   "processo": servicos.go2rtc.estado, "detalhe": servicos.go2rtc.detalhe},
         "sessoes": _sessoes(servicos, {c.id: c.nome for c in cameras}),
         "especialistas": [{"id": pid, "versao": c["versao"], "identidade_curta": str(c["identidade"])[:12]} for pid, c in sorted(contratos.items())],
         "sombra": {"ativas": sum(1 for c in feed["cameras"] if c["estado"] == "ativa"), "cameras": feed["cameras"]},

@@ -24,6 +24,8 @@
     <h4 id="pr-go2rtc">go2rtc</h4>
     <dl class="dados">
       <dt>API</dt><dd>{% if g.api_ok %}<span class="badge online">respondendo</span>{% else %}<span class="badge offline">sem resposta</span>{% endif %}</dd>
+      <dt>Processo</dt><dd>{% set pe = g.processo or 'parado' %}<span class="badge {{ 'online' if pe in ('rodando', 'externo') else ('offline' if pe in ('sem_executavel', 'erro') else 'neutro') }}">{{ {'rodando': 'iniciado pelo painel', 'externo': 'externo (já em execução)', 'sem_executavel': 'executável não encontrado', 'erro': 'erro ao iniciar', 'parado': 'parado'}.get(pe, pe) }}</span>
+        {% if g.detalhe and pe in ('sem_executavel', 'erro') %}<span class="aviso" style="display:block">{{ g.detalhe }}</span>{% endif %}</dd>
       <dt>Streams</dt><dd>{{ g.streams if g.streams is not none else '—' }}</dd>
       <dt>Câmeras sincronizadas</dt><dd>{{ g.sincronizadas if g.sincronizadas is not none else '—' }}</dd>
     </dl>

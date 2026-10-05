@@ -14,7 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -37,6 +37,36 @@ rtsp:
 webrtc:
   listen: ":8555"
 """
+
+
+def _host_porta(url: str, padrao_porta: int) -> tuple[str, int]:
+    """(host, porta) de uma URL http/rtsp. Host vazio/invalido vira 127.0.0.1; porta ausente usa o padrao."""
+    try:
+        partes = urlsplit(url if "//" in url else f"//{url}")
+        return partes.hostname or "127.0.0.1", partes.port or padrao_porta
+    except ValueError:
+        return "127.0.0.1", padrao_porta
+
+
+def render_base_yaml(api_url: str = "http://127.0.0.1:1984", rtsp_url: str = "rtsp://127.0.0.1:8554") -> str:
+    """YAML base do go2rtc com as portas das URLs configuradas (api e RTSP de retransmissao).
+
+    Serve para o go2rtc conviver com outro servidor RTSP na mesma maquina (ex.: o MediaMTX do SimulaterDSA em 8554): configure a
+    "Base RTSP" para outra porta (ex.: rtsp://127.0.0.1:8556) e o go2rtc passa a escutar nela. Os padroes reproduzem BASE_YAML_PADRAO."""
+    api_host, api_porta = _host_porta(api_url, 1984)
+    rtsp_host, rtsp_porta = _host_porta(rtsp_url, 8554)
+    return (BASE_YAML_PADRAO.split("api:")[0] + f'api:\n  listen: "{api_host}:{api_porta}"\nrtsp:\n  listen: "{rtsp_host}:{rtsp_porta}"\nwebrtc:\n  listen: ":8555"\n')
+
+
+def porta_em_uso(host: str, porta: int, timeout: float = 0.3) -> bool:
+    """True se algo ja ATENDE em host:porta (tentativa de conexao curta). Nao liga nem desliga nada."""
+    import socket
+
+    try:
+        with socket.create_connection((host if host not in ("", "0.0.0.0") else "127.0.0.1", porta), timeout=timeout):
+            return True
+    except OSError:
+        return False
 
 
 def nome_stream(camera: Camera) -> str | None:
@@ -289,6 +319,9 @@ class Go2rtcProcesso:
     configurado_exe: Callable[[], str]
     client_factory: Callable[[], Go2rtcClient]
     popen: Callable[..., Any] = subprocess.Popen
+    configurado_rtsp: Callable[[], str] = lambda: "rtsp://127.0.0.1:8554"      # noqa: E731 -- "Base RTSP" das Configuracoes
+    configurado_api: Callable[[], str] = lambda: "http://127.0.0.1:1984"       # noqa: E731
+    porta_ocupada: Callable[[str, int], bool] = porta_em_uso
     intervalo_minimo_reinicio: float = 10.0
     relogio: Callable[[], float] = time.monotonic
     estado: str = "parado"
@@ -338,7 +371,13 @@ class Go2rtcProcesso:
         self._ultimo_spawn = self.relogio()
         self.dir.mkdir(parents=True, exist_ok=True)
         if not self.base_yaml.exists():
-            self.base_yaml.write_text(BASE_YAML_PADRAO, encoding="utf-8")
+            self.base_yaml.write_text(render_base_yaml(self.configurado_api(), self.configurado_rtsp()), encoding="utf-8")
+        host, porta = _host_porta(self.configurado_rtsp(), 8554)
+        if self.porta_ocupada(host, porta):
+            self.estado = "erro"
+            self.detalhe = (f"A porta RTSP {porta} ja esta em uso por outro programa (ex.: o MediaMTX do SimulaterDSA). Em Configuracoes, mude a "
+                            f"'Base RTSP' para outra porta (ex.: rtsp://127.0.0.1:{porta + 2}) e, se ja existir, ajuste 'rtsp: listen' em {self.base_yaml}.")
+            return self.estado
         if not self.streams_yaml.exists():
             escrever_atomico(self.streams_yaml, render_streams_yaml({}))
         try:

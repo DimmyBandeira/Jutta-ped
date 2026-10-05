@@ -2,6 +2,10 @@
 
 Estado: **ativo — 05f implementado em sombra, validação dos dois níveis em andamento. Referência de qualidade em confirmação.**
 Início: 04/10/2026.
+
+Último fechamento: [integração SimulaterDSA → go2rtc → runtime/player](fechamento_integracao_go2rtc.md).
+go2rtc instalado e ensaio real aprovado; não confundir esse fechamento com a conclusão
+da migração ou com a referência de qualidade. Próximas demandas partem desse registro.
 Branch: `feature/motor-plugins-nos`.
 Base: `2e8b06a7e7228f497a5220baad3065313e8a21be`, originada de
 `feature/service-layer-evidencias-ui`.

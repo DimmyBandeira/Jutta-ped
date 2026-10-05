@@ -379,7 +379,7 @@ class FakePopen:
         self.returncode = -9
 
 
-def _processo(tmp_path, api_responde: bool, exe: str, popen=FakePopen, relogio=lambda: 0.0):
+def _processo(tmp_path, api_responde: bool, exe: str, popen=FakePopen, relogio=lambda: 0.0, porta_ocupada=lambda host, porta: False, rtsp="rtsp://127.0.0.1:8554"):
     class _Cliente:
         def listar(self):
             if not api_responde:
@@ -390,7 +390,8 @@ def _processo(tmp_path, api_responde: bool, exe: str, popen=FakePopen, relogio=l
         def close(self):
             pass
 
-    return Go2rtcProcesso(runtime_dir=tmp_path, configurado_exe=lambda: exe, client_factory=_Cliente, popen=popen, relogio=relogio)
+    return Go2rtcProcesso(runtime_dir=tmp_path, configurado_exe=lambda: exe, client_factory=_Cliente, popen=popen, relogio=relogio,
+                          porta_ocupada=porta_ocupada, configurado_rtsp=lambda: rtsp)
 
 
 def test_processo_sem_executavel_informa_onde_colocar(tmp_path):
@@ -520,3 +521,47 @@ def test_encerramento_para_todas_as_sessoes_de_ia_antes_de_sair(ambiente):
     a.servicos.parar()
     assert a.gerente.ativas == {}
     assert a.servicos.ia.estado(1)["estado"] == "desligada"
+
+
+# ------------------------------------------------------------ porta RTSP (convivencia com o MediaMTX do SimulaterDSA)
+
+def test_base_yaml_gerado_usa_a_porta_da_base_rtsp_configurada(tmp_path):
+    from src.jutta_ped.painel.go2rtc import render_base_yaml
+
+    assert yaml.safe_load(render_base_yaml()) == yaml.safe_load(BASE_YAML_PADRAO)                       # padroes inalterados
+    exe = tmp_path / "go2rtc-bin"
+    exe.write_bytes(b"")
+    p = _processo(tmp_path, False, str(exe), rtsp="rtsp://127.0.0.1:8556")
+    assert p.garantir() == "rodando"
+    base = yaml.safe_load((tmp_path / "go2rtc" / "go2rtc.yaml").read_text(encoding="utf-8"))
+    assert base["rtsp"]["listen"] == "127.0.0.1:8556" and base["api"]["listen"] == "127.0.0.1:1984"
+
+
+def test_porta_rtsp_ocupada_por_outro_programa_nao_sobe_e_explica(tmp_path):
+    exe = tmp_path / "go2rtc-bin"
+    exe.write_bytes(b"")
+    lancados: list = []
+
+    def popen(cmd, **kw):
+        lancados.append(cmd)
+        return FakePopen(cmd, **kw)
+
+    consultas: list = []
+    p = _processo(tmp_path, False, str(exe), popen=popen, porta_ocupada=lambda h, porta: (consultas.append((h, porta)) or True))
+    assert p.garantir() == "erro" and lancados == [] and consultas == [("127.0.0.1", 8554)]
+    assert "8554" in p.detalhe and "MediaMTX" in p.detalhe and "Base RTSP" in p.detalhe and "8556" in p.detalhe       # diz o que fazer, com a porta sugerida
+
+
+def test_porta_em_uso_detecta_servidor_real_e_porta_livre():
+    import socket
+
+    from src.jutta_ped.painel.go2rtc import porta_em_uso
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        s.listen(1)
+        assert porta_em_uso("127.0.0.1", s.getsockname()[1]) is True
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        livre = s.getsockname()[1]
+    assert porta_em_uso("127.0.0.1", livre) is False

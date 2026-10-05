@@ -1,5 +1,11 @@
 # Etapa 05f — Configuração simples por câmera e validação em dois níveis
 
+**Atualização de fechamento da frente go2rtc:** a dependência foi instalada e a
+cadeia MediaMTX → go2rtc → runtime/player foi validada, com overlay e popups
+em tela estreita. O relato anterior de “executável ausente” abaixo é histórico.
+Veja [`fechamento_integracao_go2rtc.md`](../fechamento_integracao_go2rtc.md) para
+evidências e limites; o 05f não está automaticamente encerrado por esse ensaio.
+
 Estado: **em andamento** (sublote da etapa 05; plano em [`plano_motor_plugins.md`](../plano_motor_plugins.md#05f--configuração-simples-por-câmera-e-validação-em-dois-níveis)). Apoia-se no motor/Cena ([03](03_motor_minimo.md), [03b](03b_cena_regras.md)) e no dashboard ([05e](05e_dashboard_sistema_mae.md)). Tudo em **sombra**, **sem commit**. As etapas 02, 03 e 05 **não** são encerradas por este sublote.
 
 Origem: [`revisao_03b_proximo_lote.md`](../revisao_03b_proximo_lote.md). **Antes de 05f**, o achado temporal de 03b foi corrigido (indeterminado não é creditado retrospectivamente; ver 03b, "Pausa, não ponte").
@@ -104,3 +110,17 @@ de prazo e um 404; esse relato anterior não foi convertido em aprovação integ
   retomada constitui métrica de qualidade ou autoriza alertas reais do motor novo.
 
 O sublote permanece **em andamento**, sem commit e sem arquivamento prematuro.
+
+### Retomada após o checkpoint `f48369b` — go2rtc da mãe e importação SimulaterDSA
+
+**Estado verificado em 05/10/2026 (consulta nova, não herdada do relato anterior):**
+- O que **está** em execução: o simulador (MediaMTX + FFmpeg, pid único) em `127.0.0.1:8554` (RTSP) e `:9997` (API), com **10 caminhos prontos**.
+- O que **não** está: **go2rtc**. Nada responde em `127.0.0.1:1984`; não há `go2rtc.exe` em `runtime/go2rtc`, no `PATH` nem no perfil do usuário (`runtime/go2rtc` só tem `streams.yaml`). A dependência que falta é, precisamente, o **executável do go2rtc**. O operador indicou que o RTSP em `8554` é o que está disponível para consumo; não foi instalado nem baixado nada.
+
+**Defeito de integração corrigido (porta):** o YAML base do go2rtc fixava RTSP em `127.0.0.1:8554`, a mesma porta do MediaMTX. Agora (a) o YAML base **gerado na primeira execução** usa as portas das URLs de Configurações (`go2rtc_api_url`, `go2rtc_rtsp_url`; padrões idênticos aos anteriores); (b) antes de subir o go2rtc o painel **recusa** com mensagem precisa se a porta RTSP já está em uso (estado `erro`, "mude a Base RTSP para outra porta, ex.: `rtsp://127.0.0.1:8556`"), em vez de falhar em silêncio; (c) a página **Processamento** passou a mostrar o estado do processo (`iniciado pelo painel` / `externo` / `executável não encontrado` / `erro ao iniciar`) e o motivo. Convivência na mesma máquina: simulador em `8554`, go2rtc em `8556` (`go2rtc_rtsp_url = rtsp://127.0.0.1:8556`). Não se alterou nem parou o simulador. Testes: `test_painel_cameras_go2rtc.py` (YAML por porta, recusa por porta ocupada, detecção real de porta) e `test_painel_dashboard_templates.py`.
+
+**Importação SimulaterDSA validada pelo painel em banco isolado, YAML real (`perinatal.yaml`), go2rtc real ausente:** 10 câmeras cadastradas (RTSP genérico, IA desligada, URL cifrada), reimportação idempotente (continuam 10), sincronização `pendente` exibida como tal, indicador "Streams sincronizados = 0" com nota "Estado do go2rtc ainda não verificado… não comprova vídeo". Sem erro de JavaScript (um 404 de favicon). Isto prova o **cadastro**, não vídeo, inferência nem a cadeia pelo go2rtc.
+
+**Suíte completa após estas mudanças:** 1315 passaram, 9 puladas, 1 aviso (216 s). Não repetida a bateria de capacidade nem os roteiros longos.
+
+**Continua bloqueado por dependência:** a cadeia **MediaMTX → go2rtc da mãe → análise/player** e, com ela, vídeo contínuo/overlay e popups em tela estreita sobre vídeo real. Para destravar: colocar `go2rtc.exe` em `runtime/go2rtc` (ou informar o caminho em Configurações), ajustar a Base RTSP para uma porta livre (`8556`) e importar o cenário pelo painel; nada mais é necessário no código.

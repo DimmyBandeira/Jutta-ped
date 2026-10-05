@@ -409,3 +409,14 @@ def test_apenas_um_modulo_cria_conexao_sse():
 @pytest.mark.parametrize("nome", ["partials/camera_card.html", "partials/eventos_recentes.html"])
 def test_templates_nao_quebram_com_contexto_minimo(nome):
     renderiza(nome, c=NS(id=1, nome="x", player_url=None, ia_ativa=False, ia_estado=None, ia_erro=None, sync_texto=""), alertas=[])
+
+
+def test_processamento_mostra_o_estado_do_processo_go2rtc_e_o_motivo():
+    base = {"servico": {"ia_disponivel": True}, "sessoes": [], "especialistas": [], "sombra": {"ativas": 0, "cameras": []},
+            "nos_remotos": {"implementado": False, "texto": ""}}
+    sem_exe = renderiza("processamento.html", eh_admin_logado=True, proc={**base, "go2rtc": {"api_ok": False, "processo": "sem_executavel", "detalhe": "Coloque o go2rtc em X"}})
+    assert "executável não encontrado" in sem_exe and "Coloque o go2rtc em X" in sem_exe
+    porta = renderiza("processamento.html", eh_admin_logado=True, proc={**base, "go2rtc": {"api_ok": False, "processo": "erro", "detalhe": "A porta RTSP 8554 ja esta em uso"}})
+    assert "erro ao iniciar" in porta and "8554" in porta
+    ok = renderiza("processamento.html", eh_admin_logado=True, proc={**base, "go2rtc": {"api_ok": True, "processo": "rodando", "detalhe": "pid 1"}})
+    assert "iniciado pelo painel" in ok and "pid 1" not in ok                      # detalhe so aparece quando ha problema
